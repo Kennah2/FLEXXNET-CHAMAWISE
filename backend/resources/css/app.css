@@ -1,11 +1,37 @@
-@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
-@source '../**/*.blade.php';
-@source '../**/*.js';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+@layer base {
+    body {
+        @apply font-sans text-navy-900 bg-surface-light antialiased;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        @apply font-heading;
+    }
+}
+
+@layer components {
+    .btn-primary {
+        @apply inline-flex items-center justify-center rounded-lg bg-brand-pink px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-pink-600 focus:outline-none focus:ring-2 focus:ring-brand-pink focus:ring-offset-2 disabled:opacity-50;
+    }
+
+    .btn-secondary {
+        @apply inline-flex items-center justify-center rounded-lg border border-navy-100 bg-white px-4 py-2 text-sm font-semibold text-navy-900 shadow-sm transition hover:bg-surface-light focus:outline-none focus:ring-2 focus:ring-navy-400 focus:ring-offset-2 disabled:opacity-50;
+    }
+
+    .card {
+        @apply rounded-xl bg-white p-6 shadow-sm ring-1 ring-navy-50;
+    }
+
+    .badge-success {
+        @apply inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-brand-teal;
+    }
+
+    .badge-pending {
+        @apply inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700;
+    }
 }
