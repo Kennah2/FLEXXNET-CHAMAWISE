@@ -3,6 +3,7 @@
 use App\Http\Controllers\ChamaMembershipController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\ModulePlaceholderController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
@@ -28,6 +29,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::post('/invitations', [InvitationController::class, 'store'])->name('organizations.invitations.store');
         Route::delete('/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('organizations.invitations.destroy');
+
+        Route::get('/{module}', [ModulePlaceholderController::class, 'show'])
+            ->whereIn('module', ['contributions', 'loans', 'accounts', 'transactions', 'reports', 'accounting', 'settings'])
+            ->name('organizations.module.show');
     });
 
     Route::post('/invitations/{token}/accept', [InvitationController::class, 'accept'])->name('invitations.accept');

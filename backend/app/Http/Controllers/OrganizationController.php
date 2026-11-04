@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreOrganizationRequest;
 use App\Models\ChamaMembership;
+use App\Models\Invitation;
 use App\Models\Organization;
+use App\Models\User;
 use App\Services\AuditLogger;
 use App\Services\ChamaRoleProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Spatie\Permission\PermissionRegistrar;
 
 class OrganizationController extends Controller
 {
@@ -65,6 +68,14 @@ class OrganizationController extends Controller
 
         $organization->load(['members' => fn ($query) => $query->orderBy('name')]);
 
-        return view('organizations.show', compact('organization'));
+        $pendingInvitationsCount = $organization->invitations()
+            ->where('status', Invitation::STATUS_PENDING)
+            ->where('expires_at', '>', now())
+            ->count();
+
+        app(PermissionRegistrar::class)->setPermissionsTeamId($organization->id);
+        $currentUserRole = User::find(request()->user()->id)->getRoleNames()->first();
+
+        return view('organizations.show', compact('organization', 'pendingInvitationsCount', 'currentUserRole'));
     }
 }

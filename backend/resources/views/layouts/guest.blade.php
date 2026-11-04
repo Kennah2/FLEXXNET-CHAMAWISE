@@ -7,7 +7,7 @@
 
         <title>{{ config('app.name', 'CHAMA WISE') }}</title>
 
-        <link rel="icon" type="image/webp" href="{{ asset('images/brand/chama-wise-icon.webp') }}">
+        <link rel="icon" type="image/png" href="{{ asset('images/brand/chama-wise-icon.png') }}">
 
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])

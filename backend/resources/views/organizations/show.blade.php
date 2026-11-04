@@ -1,42 +1,124 @@
-<x-app-layout>
+<x-chama-layout :organization="$organization" active="overview">
     <x-slot name="header">
-        <div class="flex items-center justify-between">
-            <div>
-                <h2 class="font-heading font-bold text-xl text-navy-900 leading-tight">{{ $organization->name }}</h2>
-                <p class="text-sm text-navy-400">{{ \Illuminate\Support\Str::headline($organization->group_type) }} &middot; {{ $organization->currency }}</p>
-            </div>
-            <a href="{{ route('organizations.members.index', $organization) }}" class="btn-secondary">Manage members</a>
-        </div>
+        <h2 class="font-heading font-bold text-2xl text-navy-900">{{ $organization->name }}</h2>
+        @if ($organization->description)
+            <p class="text-navy-400 mt-1">{{ $organization->description }}</p>
+        @endif
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-5xl mx-auto sm:px-6 lg:px-8 space-y-6">
-            @if (session('status'))
-                <div class="card border-l-4 border-brand-teal text-sm text-navy-900">{{ session('status') }}</div>
-            @endif
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div class="card">
-                    <p class="text-sm text-navy-400">Members</p>
-                    <p class="text-2xl font-heading font-bold text-navy-900">{{ $organization->members->count() }}</p>
+    <div class="space-y-6">
+        <!-- Welcome banner -->
+        <div class="rounded-2xl bg-gradient-to-br from-navy-900 to-navy-700 text-white p-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                <div>
+                    <div class="flex items-center gap-3">
+                        <h2 class="font-heading font-bold text-2xl">Welcome back, {{ Str::of(auth()->user()->name)->before(' ') }}!</h2>
+                        @if ($currentUserRole)
+                            <span class="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium">{{ ucfirst($currentUserRole) }}</span>
+                        @endif
+                    </div>
+                    <p class="mt-2 text-navy-100 text-sm">You're viewing {{ $organization->name }}.</p>
                 </div>
-                <div class="card">
-                    <p class="text-sm text-navy-400">Status</p>
-                    <p class="text-2xl font-heading font-bold text-brand-teal">{{ ucfirst($organization->status) }}</p>
-                </div>
-                <div class="card">
-                    <p class="text-sm text-navy-400">Formed</p>
-                    <p class="text-2xl font-heading font-bold text-navy-900">{{ $organization->formation_date?->format('M Y') ?? '—' }}</p>
+                <div class="text-left sm:text-right">
+                    <p class="text-xs text-navy-100 uppercase tracking-wide">Active members</p>
+                    <p class="text-3xl font-heading font-bold">{{ $organization->members->count() }}</p>
                 </div>
             </div>
+        </div>
 
-            @if ($organization->description)
-                <div class="card">
-                    <h3 class="font-heading font-semibold text-navy-900 mb-2">About</h3>
-                    <p class="text-navy-700">{{ $organization->description }}</p>
+        <!-- Pending actions -->
+        <div>
+            <h3 class="font-heading font-semibold text-navy-900 mb-3">Pending Actions</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <a href="{{ route('organizations.members.index', $organization) }}" class="card flex items-center justify-between hover:ring-brand-pink transition">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><x-icon name="bell" class="h-5 w-5" /></span>
+                        <div>
+                            <p class="font-medium text-navy-900 text-sm">Pending Invitations</p>
+                            <p class="text-xs text-navy-400">Awaiting acceptance</p>
+                        </div>
+                    </div>
+                    <span class="text-lg font-heading font-bold text-navy-900">{{ $pendingInvitationsCount }}</span>
+                </a>
+                <a href="{{ route('organizations.module.show', [$organization, 'loans']) }}" class="card flex items-center justify-between opacity-60 hover:opacity-100 transition">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><x-icon name="calculator" class="h-5 w-5" /></span>
+                        <div>
+                            <p class="font-medium text-navy-900 text-sm">Loan Applications</p>
+                            <p class="text-xs text-navy-400">Coming in Phase 6</p>
+                        </div>
+                    </div>
+                </a>
+                <a href="{{ route('organizations.module.show', [$organization, 'accounts']) }}" class="card flex items-center justify-between opacity-60 hover:opacity-100 transition">
+                    <div class="flex items-center gap-3">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-brand-teal"><x-icon name="currency" class="h-5 w-5" /></span>
+                        <div>
+                            <p class="font-medium text-navy-900 text-sm">Withdrawal Approvals</p>
+                            <p class="text-xs text-navy-400">Coming in Phase 3</p>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+
+        <!-- Stat cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <a href="{{ route('organizations.members.index', $organization) }}" class="card hover:ring-brand-pink transition">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-navy-400">Total Members</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-navy-50 text-navy-900"><x-icon name="users" class="h-5 w-5" /></span>
                 </div>
-            @endif
+                <p class="text-2xl font-heading font-bold text-navy-900 mt-3">{{ $organization->members->count() }}</p>
+                <p class="text-xs text-brand-pink mt-1">View all &rarr;</p>
+            </a>
+            <a href="{{ route('organizations.module.show', [$organization, 'loans']) }}" class="card opacity-70 hover:opacity-100 transition">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-navy-400">Active Loans</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><x-icon name="calculator" class="h-5 w-5" /></span>
+                </div>
+                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 6</p>
+            </a>
+            <a href="{{ route('organizations.module.show', [$organization, 'contributions']) }}" class="card opacity-70 hover:opacity-100 transition">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-navy-400">Total Contributions</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-brand-teal"><x-icon name="currency" class="h-5 w-5" /></span>
+                </div>
+                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 2</p>
+            </a>
+            <a href="{{ route('organizations.module.show', [$organization, 'accounts']) }}" class="card opacity-70 hover:opacity-100 transition">
+                <div class="flex items-center justify-between">
+                    <p class="text-sm text-navy-400">Accounts</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><x-icon name="card" class="h-5 w-5" /></span>
+                </div>
+                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 3</p>
+            </a>
+        </div>
 
+        <!-- Quick actions -->
+        <div>
+            <h3 class="font-heading font-semibold text-navy-900 mb-3">Quick Actions</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                @php
+                    $quickActions = [
+                        ['label' => 'Record Contribution', 'icon' => 'currency', 'bg' => 'bg-emerald-50', 'fg' => 'text-brand-teal', 'route' => route('organizations.module.show', [$organization, 'contributions'])],
+                        ['label' => 'Apply for Loan', 'icon' => 'calculator', 'bg' => 'bg-purple-50', 'fg' => 'text-purple-600', 'route' => route('organizations.module.show', [$organization, 'loans'])],
+                        ['label' => 'Add Member', 'icon' => 'plus', 'bg' => 'bg-blue-50', 'fg' => 'text-blue-600', 'route' => route('organizations.members.index', $organization)],
+                        ['label' => 'Record Transaction', 'icon' => 'list', 'bg' => 'bg-indigo-50', 'fg' => 'text-indigo-600', 'route' => route('organizations.module.show', [$organization, 'transactions'])],
+                        ['label' => 'Add Account', 'icon' => 'card', 'bg' => 'bg-amber-50', 'fg' => 'text-amber-600', 'route' => route('organizations.module.show', [$organization, 'accounts'])],
+                        ['label' => 'View Reports', 'icon' => 'chart', 'bg' => 'bg-rose-50', 'fg' => 'text-brand-pink', 'route' => route('organizations.module.show', [$organization, 'reports'])],
+                    ];
+                @endphp
+                @foreach ($quickActions as $action)
+                    <a href="{{ $action['route'] }}" class="card flex flex-col items-center justify-center gap-2 text-center py-6 hover:ring-brand-pink transition">
+                        <span class="flex h-10 w-10 items-center justify-center rounded-lg {{ $action['bg'] }} {{ $action['fg'] }}"><x-icon :name="$action['icon']" class="h-5 w-5" /></span>
+                        <span class="text-xs font-medium text-navy-900">{{ $action['label'] }}</span>
+                    </a>
+                @endforeach
+            </div>
+        </div>
+
+        <!-- Recent activity -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="card">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="font-heading font-semibold text-navy-900">Members</h3>
@@ -46,8 +128,8 @@
                     @foreach ($organization->members->take(5) as $member)
                         <li class="py-3 flex items-center justify-between">
                             <div>
-                                <p class="font-medium text-navy-900">{{ $member->name }}</p>
-                                <p class="text-sm text-navy-400">Member #{{ $member->pivot->membership_number }}</p>
+                                <p class="font-medium text-navy-900 text-sm">{{ $member->name }}</p>
+                                <p class="text-xs text-navy-400">Member #{{ $member->pivot->membership_number }}</p>
                             </div>
                             <span class="badge-success">{{ ucfirst($member->pivot->status) }}</span>
                         </li>
@@ -55,13 +137,16 @@
                 </ul>
             </div>
 
-            <div class="card bg-navy-900 text-white">
-                <p class="text-sm text-navy-100">
-                    Contribution schedules, savings tracking, payments and financial reporting are
-                    built out in the next development phase — this is the Phase 1 foundation:
-                    membership, roles and chama administration.
+            <div class="card">
+                <h3 class="font-heading font-semibold text-navy-900 mb-2">Financial summary</h3>
+                <p class="text-sm text-navy-400 mb-4">
+                    The ledger, transaction history and monthly summaries land in Phase 3 —
+                    deliberately not shown here with placeholder numbers in the meantime.
                 </p>
+                <a href="{{ route('organizations.module.show', [$organization, 'accounting']) }}" class="text-sm text-brand-pink hover:underline inline-flex items-center gap-1">
+                    See what's coming <x-icon name="arrow-right" class="h-4 w-4" />
+                </a>
             </div>
         </div>
     </div>
-</x-app-layout>
+</x-chama-layout>
