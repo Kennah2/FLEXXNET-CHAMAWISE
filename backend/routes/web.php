@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\ChamaMembershipController;
+use App\Http\Controllers\ContributionController;
+use App\Http\Controllers\ContributionScheduleController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\ModulePlaceholderController;
@@ -30,8 +32,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/invitations', [InvitationController::class, 'store'])->name('organizations.invitations.store');
         Route::delete('/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('organizations.invitations.destroy');
 
+        Route::prefix('contributions')->name('organizations.contributions.')->group(function () {
+            Route::get('/', [ContributionController::class, 'index'])->name('index');
+            Route::post('/', [ContributionController::class, 'store'])->name('store');
+            Route::post('/{contribution}/verify', [ContributionController::class, 'verify'])->name('verify');
+            Route::post('/{contribution}/reject', [ContributionController::class, 'reject'])->name('reject');
+            Route::post('/{contribution}/reverse', [ContributionController::class, 'reverse'])->name('reverse');
+
+            Route::get('/schedules', [ContributionScheduleController::class, 'index'])->name('schedules.index');
+            Route::get('/schedules/create', [ContributionScheduleController::class, 'create'])->name('schedules.create');
+            Route::post('/schedules', [ContributionScheduleController::class, 'store'])->name('schedules.store');
+            Route::get('/schedules/{schedule}', [ContributionScheduleController::class, 'show'])->name('schedules.show');
+        });
+
         Route::get('/{module}', [ModulePlaceholderController::class, 'show'])
-            ->whereIn('module', ['contributions', 'loans', 'accounts', 'transactions', 'reports', 'accounting', 'settings'])
+            ->whereIn('module', ['loans', 'accounts', 'transactions', 'reports', 'accounting', 'settings'])
             ->name('organizations.module.show');
     });
 

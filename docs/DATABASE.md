@@ -57,13 +57,57 @@ foreign key. Seeded default roles per Part 10: `chairperson`, `treasurer`, `secr
 `member`, `auditor` — seeded as data, not hardcoded into application logic, so a chama (or the
 platform admin) can introduce additional custom roles later without a code change.
 
-## Entity relationships (Phase 1 slice)
+## Phase 2 tables (contributions)
+
+All monetary columns here are **integer minor units** (cents), not `DECIMAL` — see
+`docs/FINANCIAL_LEDGER.md` for why (no `bcmath` extension available in this environment, and
+integer arithmetic needs none).
+
+### `contribution_schedules`
+One per chama's contribution arrangement (Part 11): `organization_id`, `name`, `description`,
+`frequency` (`daily`/`weekly`/`monthly`/`custom`), `currency`, `amount_cents`, `start_date`,
+`end_date` (nullable), `deadline_time`, `timezone` (default `Africa/Nairobi`),
+`grace_period_days`, `penalty_amount_cents`, `applies_to` (`all`/`selected`), `status`
+(`active`/`closed`), `created_by`. `start_date`/`end_date` are cast `date:Y-m-d` specifically so
+the stored format matches what lookup queries search for (see Known Issues in
+`docs/DEVELOPMENT_PROGRESS.md` Phase 2 — this was a real bug, not a stylistic choice).
+
+### `schedule_members`
+Pivot used only when `applies_to = 'selected'`: `contribution_schedule_id`, `user_id`.
+
+### `contribution_obligations`
+One expected contribution for one member for one period: `contribution_schedule_id`,
+`organization_id` (denormalized for tenant-scoped queries), `user_id`, `period_start`/
+`period_end` (cast `date:Y-m-d`, same reason as above), `due_at`/`grace_expires_at` (`datetime`,
+always persisted as UTC — see `docs/FINANCIAL_LEDGER.md`'s timezone pitfall section),
+`amount_due_cents`, `amount_paid_cents` (mutated only by `ContributionAllocator`), `status`
+(`pending`/`partial`/`paid`/`overdue`/`waived`), `penalty_amount_cents`, `penalty_status`
+(`none`/`assessed`/`waived`/`collected`), `penalty_waived_by`/`penalty_waived_reason`. Unique on
+`(contribution_schedule_id, user_id, period_start)`.
+
+### `contributions`
+A recorded payment (Part 13), not proof of a successful one until verified:
+`organization_id`, `user_id`, `contribution_schedule_id` (nullable — a general/unscheduled
+payment), `amount_cents`, `currency`, `payment_method`, `transaction_reference` (nullable, **not**
+a unique column — see `docs/FINANCIAL_LEDGER.md`), `paid_at`, `recorded_by`, `status`
+(`pending_verification`/`verified`/`rejected`/`reversed`), `verified_by`/`verified_at`, `notes`.
+
+### `contribution_allocations`
+The auditable link between one verified contribution and the obligation(s) it pays down:
+`contribution_id`, `contribution_obligation_id`, `amount_cents`, `reversed_at` (nullable — a
+reversal stamps this rather than deleting the row).
+
+## Entity relationships
 
 ```
 users 1───* chama_memberships *───1 organizations
 users 1───* (spatie model_has_roles, team-scoped by organization_id)
 organizations 1───* invitations
 users, organizations 1───* audit_logs (both nullable depending on action scope)
+
+organizations 1───* contribution_schedules 1───* contribution_obligations *───1 users
+contribution_schedules 1───* contributions *───1 users
+contributions 1───* contribution_allocations *───1 contribution_obligations
 ```
 
 Full ERD is expanded in `docs/ERD.md` once there's enough schema across phases to make a diagram

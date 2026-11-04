@@ -35,7 +35,7 @@
                         $navItems = [
                             ['key' => 'overview', 'label' => 'Overview', 'icon' => 'home', 'route' => route('organizations.show', $organization)],
                             ['key' => 'members', 'label' => 'Members', 'icon' => 'users', 'route' => route('organizations.members.index', $organization)],
-                            ['key' => 'contributions', 'label' => 'Contributions', 'icon' => 'currency', 'route' => route('organizations.module.show', [$organization, 'contributions'])],
+                            ['key' => 'contributions', 'label' => 'Contributions', 'icon' => 'currency', 'route' => route('organizations.contributions.index', $organization)],
                             ['key' => 'loans', 'label' => 'Loans', 'icon' => 'calculator', 'route' => route('organizations.module.show', [$organization, 'loans'])],
                             ['key' => 'accounts', 'label' => 'Accounts', 'icon' => 'card', 'route' => route('organizations.module.show', [$organization, 'accounts'])],
                             ['key' => 'transactions', 'label' => 'Transactions', 'icon' => 'list', 'route' => route('organizations.module.show', [$organization, 'transactions'])],

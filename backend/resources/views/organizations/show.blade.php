@@ -78,12 +78,17 @@
                 </div>
                 <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 6</p>
             </a>
-            <a href="{{ route('organizations.module.show', [$organization, 'contributions']) }}" class="card opacity-70 hover:opacity-100 transition">
+            <a href="{{ route('organizations.contributions.index', $organization) }}" class="card hover:ring-brand-pink transition">
                 <div class="flex items-center justify-between">
                     <p class="text-sm text-navy-400">Total Contributions</p>
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-brand-teal"><x-icon name="currency" class="h-5 w-5" /></span>
                 </div>
-                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 2</p>
+                @if ($hasContributionSchedules)
+                    <p class="text-2xl font-heading font-bold text-navy-900 mt-3">{{ \App\Support\Money::format($totalVerifiedContributionsCents, $organization->currency) }}</p>
+                    <p class="text-xs text-brand-pink mt-1">View all &rarr;</p>
+                @else
+                    <p class="text-sm font-medium text-navy-400 mt-3">No schedule set up yet</p>
+                @endif
             </a>
             <a href="{{ route('organizations.module.show', [$organization, 'accounts']) }}" class="card opacity-70 hover:opacity-100 transition">
                 <div class="flex items-center justify-between">
@@ -100,7 +105,7 @@
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 @php
                     $quickActions = [
-                        ['label' => 'Record Contribution', 'icon' => 'currency', 'bg' => 'bg-emerald-50', 'fg' => 'text-brand-teal', 'route' => route('organizations.module.show', [$organization, 'contributions'])],
+                        ['label' => 'Record Contribution', 'icon' => 'currency', 'bg' => 'bg-emerald-50', 'fg' => 'text-brand-teal', 'route' => route('organizations.contributions.index', $organization)],
                         ['label' => 'Apply for Loan', 'icon' => 'calculator', 'bg' => 'bg-purple-50', 'fg' => 'text-purple-600', 'route' => route('organizations.module.show', [$organization, 'loans'])],
                         ['label' => 'Add Member', 'icon' => 'plus', 'bg' => 'bg-blue-50', 'fg' => 'text-blue-600', 'route' => route('organizations.members.index', $organization)],
                         ['label' => 'Record Transaction', 'icon' => 'list', 'bg' => 'bg-indigo-50', 'fg' => 'text-indigo-600', 'route' => route('organizations.module.show', [$organization, 'transactions'])],

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreOrganizationRequest;
 use App\Models\ChamaMembership;
+use App\Models\Contribution;
 use App\Models\Invitation;
 use App\Models\Organization;
 use App\Models\User;
@@ -76,6 +77,17 @@ class OrganizationController extends Controller
         app(PermissionRegistrar::class)->setPermissionsTeamId($organization->id);
         $currentUserRole = User::find(request()->user()->id)->getRoleNames()->first();
 
-        return view('organizations.show', compact('organization', 'pendingInvitationsCount', 'currentUserRole'));
+        $hasContributionSchedules = $organization->contributionSchedules()->exists();
+        $totalVerifiedContributionsCents = $organization->contributions()
+            ->where('status', Contribution::STATUS_VERIFIED)
+            ->sum('amount_cents');
+
+        return view('organizations.show', compact(
+            'organization',
+            'pendingInvitationsCount',
+            'currentUserRole',
+            'hasContributionSchedules',
+            'totalVerifiedContributionsCents',
+        ));
     }
 }

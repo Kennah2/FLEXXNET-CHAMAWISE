@@ -163,6 +163,154 @@ now 40 tests passing, Pint clean, verified in a real browser including the colla
 
 ---
 
+## Phase 2 — Savings MVP (contribution schedules & obligations)
+
+**Status:** Core slice complete.
+
+### Completed
+
+- Full contribution domain: `contribution_schedules`, `schedule_members` (for schedules scoped to
+  selected members only), `contribution_obligations` (one row per member per period), `contributions`
+  (recorded payments), `contribution_allocations` (the auditable link between a verified payment
+  and the obligation(s) it pays down).
+- `App\Support\Money` — all money is integer minor units (cents), never a PHP float or a
+  bcmath-dependent decimal string; see `docs/FINANCIAL_LEDGER.md` for why (this container has no
+  `bcmath` extension, and the target shared host can't be assumed to either).
+- `PeriodCalculator` — timezone-aware period/deadline math (daily/weekly/monthly; "custom" is
+  accepted but doesn't auto-generate). Covered by 13 unit tests including leap-year February,
+  non-leap-year February, and a December→January year boundary.
+- `ObligationGenerator` — idempotent, lazy generation of obligation rows for every period that has
+  begun, for every applicable member, triggered on viewing the contributions page, on verifying a
+  payment, and by the new `contributions:assess` Artisan command (scheduled daily at 00:10
+  Africa/Nairobi in `bootstrap/app.php`, for chamas nobody is actively viewing — see
+  `docs/CPANEL_CONFIGURATION.md`). Assesses overdue status and missed-contribution penalties
+  against grace-period expiry.
+- `ContributionAllocator` — allocates a verified payment across a member's outstanding obligations
+  oldest-period-first (FIFO); overpayment leaves an honest surplus rather than inventing a credit
+  against periods that don't exist yet; `reverse()` undoes an allocation by restoring obligation
+  balances and stamping (not deleting) the allocation rows.
+- Manual payment recording and a separate verification step (Part 13): any member can record their
+  own payment; recording on another member's behalf requires the `manage-finances` permission; a
+  payment only affects balances once a `manage-finances` user verifies it (never the same action
+  as recording, even for an official). Reject and reverse actions, both audit-logged.
+- Web UI: `/chamas/{organization}/contributions` (statement, record form, pending-verification
+  queue for officials, obligations list with penalty amounts shown separately from the base
+  contribution per Part 11's "remains outstanding separately from the penalty"),
+  `/contributions/schedules` (list/create/show, with a per-member expected/paid/overdue summary).
+  Overview page's "Total Contributions" stat and "Record Contribution" quick action are now wired
+  to real data — no longer a Phase-2 placeholder.
+- `DevDataSeeder` now creates the actual "Daily savings" `ContributionSchedule` (KES 100/day, KES
+  50 penalty) for the sample chama and generates its obligations, so the dev seed demonstrates the
+  full feature rather than just configuration values sitting unused in JSON.
+
+### Files created
+
+`app/Models/{ContributionSchedule,ContributionObligation,Contribution,ContributionAllocation}.php`,
+`app/Services/Contributions/{ContributionPeriod,PeriodCalculator,ObligationGenerator,ContributionAllocator}.php`,
+`app/Support/Money.php`, `app/Policies/{ContributionSchedulePolicy,ContributionPolicy}.php`,
+`app/Policies/Concerns/ChecksChamaPermissions.php` (shared trait — see "Files modified"),
+`app/Http/Controllers/{ContributionScheduleController,ContributionController}.php`,
+`app/Http/Requests/{StoreContributionScheduleRequest,StoreContributionRequest}.php`,
+`app/Console/Commands/AssessContributionObligations.php`,
+`database/migrations/2026_11_04_144*` (schedules, schedule_members, obligations, contributions,
+allocations), `resources/views/organizations/contributions/**`,
+`resources/views/components/status-badge.blade.php`, `tests/Concerns/CreatesChamas.php`,
+`tests/Unit/Support/MoneyTest.php`, `tests/Unit/Services/Contributions/PeriodCalculatorTest.php`,
+`tests/Feature/Contributions/{ObligationGenerationTest,ContributionAllocatorTest,ContributionControllerTest,ContributionScheduleControllerTest}.php`,
+`docs/FINANCIAL_LEDGER.md`, `docs/CPANEL_CONFIGURATION.md`.
+
+### Files modified
+
+`app/Models/{Organization,ContributionSchedule}.php` (casts changed to `date:Y-m-d` — see Known
+issues/fixed below), `app/Http/Controllers/{OrganizationController,ModulePlaceholderController}.php`,
+`app/Policies/{OrganizationPolicy,ChamaMembershipPolicy,InvitationPolicy}.php` (refactored onto
+the new shared `ChecksChamaPermissions` trait — no behavior change, confirmed by the full suite
+staying green before and after), `routes/web.php`, `resources/views/layouts/chama.blade.php`,
+`resources/views/organizations/show.blade.php`, `database/seeders/DevDataSeeder.php`,
+`bootstrap/app.php` (added `withSchedule()`).
+
+### Tests executed
+
+`php artisan test` → **87 passed, 222 assertions**. `vendor/bin/pint --test` → clean. The full
+golden path (create schedule → view generated obligations, including 10 days overdue with
+penalties → record a payment → verify it → allocation reflected in the statement and the Overview
+stat card) was driven through a real headless browser against `php artisan serve`, not just
+asserted via HTTP status codes.
+
+**Four real bugs were found and fixed during this work**, not merely worked around:
+
+1. **Penalty never assessed.** `ObligationGenerator` relied on a DB column default
+   (`penalty_status` defaulting to `'none'`) being reflected on the in-memory model right after
+   `create()` — it isn't; Eloquent doesn't refetch defaults. The check `=== PENALTY_NONE` compared
+   against `null` and silently skipped every penalty. Fixed by setting every such column
+   explicitly in the insert payload instead of relying on the database to fill it in. The same
+   class of bug recurred almost immediately in `ContributionScheduleController::store()` (a
+   schedule's `timezone` relied on its own DB default and crashed `PeriodCalculator` with a null
+   timezone the moment a schedule was created through the real HTTP form) — fixed the same way.
+2. **Idempotency / uniqueness broken by date-cast format.** `period_start`'s plain `'date'` cast
+   serialized to a full `Y-m-d H:i:s` string on insert, but the `firstOrCreate` lookup searched
+   with a `Y-m-d`-only string, so the lookup never matched an existing row — harmless on a schedule's
+   very first generation, but a `UniqueConstraintViolationException` on every regeneration after
+   that (exactly what the daily cron command would hit). Fixed by casting `period_start`/
+   `period_end` (and `ContributionSchedule`'s `start_date`/`end_date`) as `date:Y-m-d` so the
+   stored and searched formats match.
+3. **Deadlines silently shifted by the timezone offset on every database round-trip.** `due_at`/
+   `grace_expires_at` were persisted as Carbon instances still carrying the schedule's own
+   timezone (e.g. Africa/Nairobi); Eloquent's `datetime` cast serializes by printing whatever
+   wall-clock digits the value currently holds, without first converting to the app's UTC
+   timezone, so the stored string silently became "local time with no timezone marker," and the
+   next read reinterpreted those same digits as UTC — a 3-hour shift, worse on each successive
+   regeneration. This did not show up in any assertion against `status` or amounts (unaffected by
+   display timezone), only in a real browser showing "due 05 Nov 2026 02:59" for a deadline
+   configured as 23:59 the day before. Fixed by calling `->utc()` before persisting, with a new
+   regression test (`test_due_at_survives_a_database_round_trip_in_the_schedules_timezone`) that
+   fetches a fresh model from the database rather than reusing the in-memory object — confirmed to
+   fail without the fix before being accepted.
+4. **A DB-level `unique(organization_id, transaction_reference)` constraint was stricter than the
+   actual business rule.** It blocked even *recording* a second pending contribution with a reused
+   reference (e.g. re-entering after the first was rejected for an unrelated reason), when Part 13
+   only requires that the same reference never be verified twice — which was already separately
+   enforced in `ContributionController::verify()`. Relaxed the migration to a plain (non-unique)
+   index and left the application-level check as the actual guard.
+
+Also refactored the three Phase 1 policies onto a new shared `ChecksChamaPermissions` trait to
+avoid a fifth near-identical copy of the tenant-membership-and-permission check; the full suite
+was re-run immediately after and stayed green, confirming no behavior change.
+
+### Known issues
+
+- No MySQL 8 verification yet (still SQLite-only for local dev/test — a pre-existing Phase 1 gap,
+  not new to this phase, but worth flagging again now that `date:Y-m-d`/datetime-cast timezone
+  behavior is load-bearing: this should specifically be re-verified against real MySQL before
+  launch, since date/datetime serialization details can differ by driver).
+- "Custom" frequency schedules are accepted by the form but intentionally do not auto-generate
+  obligations (Part 11 doesn't require it); there's no UI yet for manually creating individual
+  obligations on a custom schedule.
+- No schedule-editing UI — a schedule's terms are fixed once created (Part 11's "maintain history
+  of important changes" amendment workflow is deferred).
+- Loans, accounts, transactions, reports, accounting, and chama settings remain honest "not built
+  yet" placeholder pages (unchanged from Phase 1).
+
+### Security notes
+
+Every new route re-verifies active membership and, where relevant, the `manage-finances`
+permission via the same fresh-User-instance pattern established in Phase 1 (now shared via
+`ChecksChamaPermissions`), so the cross-tenant guarantees from Phase 1 extend to the new
+contribution routes — covered by dedicated tests in `ContributionControllerTest` and
+`ContributionScheduleControllerTest`. Verification and recording are kept as separate actions/audit
+events even when performed by the same official, preserving the verification trail Part 13 asks
+for.
+
+### Next step
+
+Phase 3 (Financial Integrity, per Part 35): financial accounts, the double-entry ledger, journal
+entries, reconciliation, withdrawals and their approval workflow, adjustments/reversals at the
+ledger level, and financial reporting — this is also where the Overview page's "Accounts" /
+"Transactions" / "Accounting" placeholders and the "Financial summary" card become real. Before
+that, consider verifying migrations against real MySQL 8 (flagged in both Phase 1 and Phase 2 now).
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

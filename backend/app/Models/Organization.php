@@ -112,6 +112,30 @@ class Organization extends Model
         return $this->hasMany(Invitation::class);
     }
 
+    /**
+     * @return HasMany<ContributionSchedule, $this>
+     */
+    public function contributionSchedules(): HasMany
+    {
+        return $this->hasMany(ContributionSchedule::class);
+    }
+
+    /**
+     * @return HasMany<ContributionObligation, $this>
+     */
+    public function contributionObligations(): HasMany
+    {
+        return $this->hasMany(ContributionObligation::class);
+    }
+
+    /**
+     * @return HasMany<Contribution, $this>
+     */
+    public function contributions(): HasMany
+    {
+        return $this->hasMany(Contribution::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
