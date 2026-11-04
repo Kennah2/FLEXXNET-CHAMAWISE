@@ -144,10 +144,7 @@
 
             <div class="card">
                 <h3 class="font-heading font-semibold text-navy-900 mb-2">Financial summary</h3>
-                <p class="text-sm text-navy-400 mb-4">
-                    The ledger, transaction history and monthly summaries land in Phase 3 —
-                    deliberately not shown here with placeholder numbers in the meantime.
-                </p>
+                <p class="text-sm text-navy-400 mb-4">Ledger and transaction history — coming in Phase 3.</p>
                 <a href="{{ route('organizations.module.show', [$organization, 'accounting']) }}" class="text-sm text-brand-pink hover:underline inline-flex items-center gap-1">
                     See what's coming <x-icon name="arrow-right" class="h-4 w-4" />
                 </a>

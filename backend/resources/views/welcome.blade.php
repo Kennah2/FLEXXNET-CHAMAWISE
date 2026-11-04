@@ -80,12 +80,12 @@
             <div class="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 @php
                     $features = [
-                        ['icon' => 'users', 'title' => 'Membership management', 'desc' => 'Invite members, assign roles per chama, and track joining, suspension and resignation history without losing financial records.'],
-                        ['icon' => 'currency', 'title' => 'Contributions & savings', 'desc' => 'Daily, weekly, monthly or custom contribution schedules, with deadlines, grace periods and penalty rules you configure.'],
-                        ['icon' => 'card', 'title' => 'M-Pesa aware payments', 'desc' => 'Record and verify manual M-Pesa payments today, with Safaricom Daraja STK Push integration on the roadmap.'],
-                        ['icon' => 'calculator', 'title' => 'Loans & table banking', 'desc' => 'Loan applications, guarantors, flat or reducing-balance interest, and clear repayment schedules.'],
-                        ['icon' => 'book', 'title' => 'Transparent accounting', 'desc' => 'A proper double-entry ledger behind every number — never a balance that can silently drift from reality.'],
-                        ['icon' => 'chart', 'title' => 'Reports & statements', 'desc' => 'Member statements, cashbooks and financial reports your treasurer and auditor can both trust.'],
+                        ['icon' => 'users', 'title' => 'Membership management', 'desc' => 'Invite members and assign roles per chama.'],
+                        ['icon' => 'currency', 'title' => 'Contributions & savings', 'desc' => 'Daily, weekly or monthly schedules with deadlines and penalties.'],
+                        ['icon' => 'card', 'title' => 'M-Pesa aware payments', 'desc' => 'Manual M-Pesa recording today, Daraja STK Push on the roadmap.'],
+                        ['icon' => 'calculator', 'title' => 'Loans & table banking', 'desc' => 'Applications, guarantors, interest and repayment schedules.'],
+                        ['icon' => 'book', 'title' => 'Transparent accounting', 'desc' => 'A proper double-entry ledger behind every number.'],
+                        ['icon' => 'chart', 'title' => 'Reports & statements', 'desc' => 'Statements and reports your treasurer and auditor can trust.'],
                     ];
                 @endphp
                 @foreach ($features as $feature)
@@ -109,9 +109,9 @@
                 <div class="mt-14 grid sm:grid-cols-3 gap-8">
                     @php
                         $steps = [
-                            ['n' => '1', 'title' => 'Create your chama', 'desc' => 'Set your group type, currency and basic details — you become the founding chairperson automatically.'],
-                            ['n' => '2', 'title' => 'Invite your members', 'desc' => 'Send each member a secure invite link and assign their role — treasurer, secretary, member or auditor.'],
-                            ['n' => '3', 'title' => 'Track everything together', 'desc' => 'Contributions, loans and reports roll out as each module ships — no spreadsheets, no guesswork.'],
+                            ['n' => '1', 'title' => 'Create your chama', 'desc' => 'You become the founding chairperson automatically.'],
+                            ['n' => '2', 'title' => 'Invite your members', 'desc' => 'Send a secure invite link and assign each member a role.'],
+                            ['n' => '3', 'title' => 'Track everything together', 'desc' => 'No spreadsheets, no guesswork.'],
                         ];
                     @endphp
                     @foreach ($steps as $step)

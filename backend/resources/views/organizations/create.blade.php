@@ -63,10 +63,7 @@
                         <x-input-error :messages="$errors->get('location')" class="mt-2" />
                     </div>
 
-                    <p class="text-sm text-navy-400">
-                        You'll be set as the founding chairperson. Contribution schedules, approval rules
-                        and other chama-specific settings are configured once your chama is created.
-                    </p>
+                    <p class="text-sm text-navy-400">You'll be set as the founding chairperson.</p>
 
                     <div class="flex justify-end gap-3">
                         <a href="{{ route('organizations.index') }}" class="btn-secondary">Cancel</a>

@@ -86,7 +86,7 @@
                     </div>
                     <div class="lg:col-span-6">
                         <button type="submit" class="btn-primary">Record contribution</button>
-                        <span class="text-xs text-navy-400 ml-2">Every contribution needs verification before it's allocated to a balance.</span>
+                        <span class="text-xs text-navy-400 ml-2">Awaits verification.</span>
                     </div>
                 </form>
                 @error('amount')<p class="text-sm text-red-600 mt-2">{{ $message }}</p>@enderror

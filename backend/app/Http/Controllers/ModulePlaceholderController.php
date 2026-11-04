@@ -20,37 +20,37 @@ class ModulePlaceholderController extends Controller
             'title' => 'Loans',
             'icon' => 'calculator',
             'phase' => 'Phase 6 — Advanced Chama Modules',
-            'description' => 'Loan applications, guarantor approval, flat-rate and reducing-balance interest, repayment schedules, and loan statements.',
+            'description' => 'Loan applications, approvals, interest and repayment schedules.',
         ],
         'accounts' => [
             'title' => 'Accounts',
             'icon' => 'card',
             'phase' => 'Phase 3 — Financial Integrity',
-            'description' => 'The chama\'s financial accounts (cash, bank, mobile money) backed by a proper double-entry ledger — never a number that can drift from reality.',
+            'description' => 'Cash, bank and mobile money accounts backed by a proper ledger.',
         ],
         'transactions' => [
             'title' => 'Transactions',
             'icon' => 'list',
             'phase' => 'Phase 3 — Financial Integrity',
-            'description' => 'The full, auditable transaction history: contributions, withdrawals, expenses, transfers and adjustments, each tied to a verified ledger entry.',
+            'description' => 'The full transaction history, tied to the ledger.',
         ],
         'reports' => [
             'title' => 'Reports',
             'icon' => 'chart',
             'phase' => 'Phase 2 onward',
-            'description' => 'Member statements, cashbooks, contribution summaries and financial statements, exportable to PDF, Excel and CSV.',
+            'description' => 'Statements and summaries, exportable to PDF, Excel and CSV.',
         ],
         'accounting' => [
             'title' => 'Accounting',
             'icon' => 'book',
             'phase' => 'Phase 3 — Financial Integrity',
-            'description' => 'The chama\'s double-entry ledger: journal entries, reconciliation, and a clear split between member savings liabilities and available cash.',
+            'description' => 'The double-entry ledger, journal entries and reconciliation.',
         ],
         'settings' => [
             'title' => 'Chama Settings',
             'icon' => 'cog',
             'phase' => 'Phase 2',
-            'description' => 'Editable contribution rules, approval thresholds, penalty policy and other chama-specific configuration from Part 8 of the specification.',
+            'description' => 'Contribution rules, approval thresholds and penalty policy.',
         ],
     ];
 

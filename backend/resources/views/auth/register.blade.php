@@ -13,7 +13,7 @@
         <div class="mt-4">
             <x-input-label for="username" :value="__('Username')" />
             <x-text-input id="username" class="block mt-1 w-full" type="text" name="username" :value="old('username')" required autocomplete="username" placeholder="e.g. jane_doe" />
-            <p class="text-xs text-navy-400 mt-1">You'll log in with this — letters, numbers, dots, dashes and underscores only.</p>
+            <p class="text-xs text-navy-400 mt-1">For logging in.</p>
             <x-input-error :messages="$errors->get('username')" class="mt-2" />
         </div>
 
@@ -21,7 +21,7 @@
         <div class="mt-4">
             <x-input-label for="email" :value="__('Email')" />
             <x-text-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required autocomplete="email" />
-            <p class="text-xs text-navy-400 mt-1">Used for verification and invitations — not for logging in.</p>
+            <p class="text-xs text-navy-400 mt-1">For verification and invitations.</p>
             <x-input-error :messages="$errors->get('email')" class="mt-2" />
         </div>
 

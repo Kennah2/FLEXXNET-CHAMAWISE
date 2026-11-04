@@ -94,7 +94,7 @@
                     @if (session('invite_url'))
                         <div class="card border-l-4 border-brand-pink text-sm text-navy-900 mb-6">
                             <p class="font-semibold mb-1">Invitation created.</p>
-                            <p class="text-navy-400 mb-2">Automated email delivery isn't wired up yet — share this link with the invitee directly:</p>
+                            <p class="text-navy-400 mb-2">Share this link with the invitee:</p>
                             <code class="block bg-surface-light rounded p-2 text-xs break-all">{{ session('invite_url') }}</code>
                         </div>
                     @endif
