@@ -311,6 +311,35 @@ that, consider verifying migrations against real MySQL 8 (flagged in both Phase 
 
 ---
 
+## Addendum — username-based login
+
+Per a user request, accounts now have a unique `username` (chosen at registration, editable on
+the profile page) alongside email. The login form accepts either (`LoginRequest` detects which
+one was typed and matches it against the right column). Usernames are always compared
+case-insensitively, normalized in PHP (`User::normalizeUsername()`) rather than left to the
+database's collation — a real, deliberately-caught risk: MySQL's default collation is
+case-insensitive while SQLite's (used for local dev/test) is not, so without normalizing, login
+behavior would silently differ between this environment and production. A migration backfills
+a derived username for any pre-existing accounts.
+
+Updated: `app/Models/User.php` (`loginFieldFor()`, `normalizeUsername()`),
+`app/Http/Requests/Auth/LoginRequest.php`, `app/Http/Controllers/Auth/RegisteredUserController.php`,
+`app/Http/Requests/ProfileUpdateRequest.php`, the register/login/profile Blade views (also
+rebranded the previously-unstyled default Breeze form components — text inputs, buttons, labels —
+to the navy/pink/teal palette while touching these pages), `database/factories/UserFactory.php`,
+`database/seeders/DevDataSeeder.php` (Ken/Frank now have usernames "ken"/"frank"). New migration:
+`add_username_to_users_table` — added nullable+unique rather than non-nullable, because this
+environment has no `doctrine/dbal` package, which Laravel's column `->change()` requires;
+"always present" is enforced at the validation layer instead, consistent with how other
+DB-default-reliant issues were handled in Phase 2.
+
+94 tests passing (up from 87 — new and updated coverage for username login, case-insensitive
+matching, registration validation, and profile username updates), Pint clean, verified in a real
+browser: registration, login with a mixed-case dotted username, login with email, and the seeded
+sample accounts logging in by username.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

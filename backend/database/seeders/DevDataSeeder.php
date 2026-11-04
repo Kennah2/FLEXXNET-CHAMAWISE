@@ -31,6 +31,7 @@ class DevDataSeeder extends Seeder
             ['email' => 'ken@example.test'],
             [
                 'name' => 'Ken',
+                'username' => 'ken',
                 'password' => Hash::make('password'),
                 'email_verified_at' => now(),
             ]
@@ -40,6 +41,7 @@ class DevDataSeeder extends Seeder
             ['email' => 'frank@example.test'],
             [
                 'name' => 'Frank',
+                'username' => 'frank',
                 'password' => Hash::make('password'),
                 'email_verified_at' => now(),
             ]
@@ -106,6 +108,6 @@ class DevDataSeeder extends Seeder
 
         app(ObligationGenerator::class)->generate($schedule);
 
-        $this->command?->info('Seeded sample chama: Ken and Frank Savings Group (ken@example.test / frank@example.test, password: "password").');
+        $this->command?->info('Seeded sample chama: Ken and Frank Savings Group. Log in as "ken" or "frank" (or their email), password: "password".');
     }
 }

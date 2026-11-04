@@ -29,6 +29,7 @@ class ProfileTest extends TestCase
             ->actingAs($user)
             ->patch('/profile', [
                 'name' => 'Test User',
+                'username' => $user->username,
                 'email' => 'test@example.com',
             ]);
 
@@ -43,6 +44,38 @@ class ProfileTest extends TestCase
         $this->assertNull($user->email_verified_at);
     }
 
+    public function test_username_is_normalized_to_lowercase_on_update(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this
+            ->actingAs($user)
+            ->patch('/profile', [
+                'name' => $user->name,
+                'username' => 'MixedCase_Name',
+                'email' => $user->email,
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $this->assertSame('mixedcase_name', $user->refresh()->username);
+    }
+
+    public function test_username_must_be_unique(): void
+    {
+        $taken = User::factory()->create(['username' => 'taken_name']);
+        $user = User::factory()->create();
+
+        $response = $this
+            ->actingAs($user)
+            ->patch('/profile', [
+                'name' => $user->name,
+                'username' => 'taken_name',
+                'email' => $user->email,
+            ]);
+
+        $response->assertSessionHasErrors('username');
+    }
+
     public function test_email_verification_status_is_unchanged_when_the_email_address_is_unchanged(): void
     {
         $user = User::factory()->create();
@@ -51,6 +84,7 @@ class ProfileTest extends TestCase
             ->actingAs($user)
             ->patch('/profile', [
                 'name' => 'Test User',
+                'username' => $user->username,
                 'email' => $user->email,
             ]);
 

@@ -3,8 +3,17 @@
 ## Authentication
 
 - Passwords hashed with Laravel's default (bcrypt) hasher; never stored or logged in plaintext.
+- Every account has a unique `username` (chosen at registration, editable from the profile page)
+  separate from its email. Members log in with either — `LoginRequest` detects which one was
+  entered (`User::loginFieldFor()`) and matches it against the right column. Usernames are always
+  compared case-insensitively, normalized in PHP (`User::normalizeUsername()`) rather than left to
+  the database's collation — MySQL's default collation is case-insensitive, SQLite's is not, so
+  relying on the database would make login behavior differ between the dev/test environment and
+  production.
 - Email verification required before a user can create or join a chama (Laravel's built-in
-  `MustVerifyEmail`).
+  `MustVerifyEmail`). Email remains the channel for verification and invitation matching — it is
+  never used as the login identifier's only option, but changing it still re-triggers
+  verification.
 - Rate limiting on login, registration, and password-reset routes using Laravel's throttle
   middleware.
 - Web sessions use Laravel's signed, encrypted session cookies; CSRF protection is on by default
