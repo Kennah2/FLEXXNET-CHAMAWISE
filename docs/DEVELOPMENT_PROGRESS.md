@@ -137,6 +137,30 @@ obligations, manual payment recording, missed-contribution/penalty logic (Africa
 timezone-aware deadlines), member statements. Before that, consider: verifying migrations against
 real MySQL 8, and building out the multi-step chama onboarding wizard if prioritized over Phase 2.
 
+### Addendum — dashboard redesign and branding update
+
+Per user-supplied reference mockups, the authenticated chama experience was redesigned from a
+top-nav shell to a sidebar-based one (`App\View\Components\ChamaLayout`, `layouts/chama.blade.php`):
+logo + "current chama" context, module navigation (Overview, Members, Contributions, Loans,
+Accounts, Transactions, Reports, Accounting, Settings), a welcome banner, stat cards, quick
+actions, and an Alpine-driven collapsible sidebar. `organizations/show.blade.php` and
+`organizations/members/index.blade.php` now use it.
+
+Sidebar items for modules this phase hasn't built (everything except Overview and Members) route
+to `ModulePlaceholderController` → `organizations/coming-soon.blade.php`, an honest "not built
+yet, here's the phase that builds it" page — never a 404 or a fabricated populated screen with
+invented numbers. Stat cards on Overview follow the same rule: Total Members and Pending
+Invitations show real data; Active Loans / Total Contributions / Accounts show a "Coming in
+Phase N" label instead of a fake zero; the financial-summary card explicitly declines to show a
+balance ahead of Phase 3's ledger.
+
+The final logo files supplied by the user (icon PNG, full lockup with tagline) replaced the
+earlier placeholder logo assets. The public landing page was rebuilt with a fuller SaaS layout
+(hero, trust strip, feature grid, how-it-works, CTA, footer) in the same navy/pink/teal brand.
+
+New test: `ModulePlaceholderTest` (member access, cross-tenant denial, unknown-module 404). Total
+now 40 tests passing, Pint clean, verified in a real browser including the collapse interaction.
+
 ---
 
 ## How to resume work in a new session
