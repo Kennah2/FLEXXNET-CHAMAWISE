@@ -40,6 +40,86 @@
                 @endif
             </div>
 
+            @if ($mpesaEnabled)
+                <div class="card" x-data="{
+                    phone: '{{ auth()->user()->phone }}',
+                    amount: '',
+                    busy: false,
+                    message: '',
+                    messageIsError: false,
+                    statusUrl(id) {
+                        return '{{ route('organizations.contributions.mpesa.status', [$organization, '__ID__']) }}'.replace('__ID__', id);
+                    },
+                    async submit() {
+                        this.busy = true;
+                        this.message = '';
+                        this.messageIsError = false;
+                        try {
+                            const res = await fetch('{{ route('organizations.contributions.mpesa.initiate', $organization) }}', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Accept': 'application/json',
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                                },
+                                body: JSON.stringify({ phone: this.phone, amount: this.amount }),
+                            });
+                            const data = await res.json();
+                            this.message = data.message;
+                            if (!res.ok || data.status !== 'pending') {
+                                this.messageIsError = !res.ok;
+                                this.busy = false;
+                                return;
+                            }
+                            this.poll(data.transaction_id, 0);
+                        } catch (e) {
+                            this.message = 'Could not reach the server — check your connection and try again.';
+                            this.messageIsError = true;
+                            this.busy = false;
+                        }
+                    },
+                    async poll(id, attempts) {
+                        if (attempts > 30) {
+                            this.message = 'Still waiting — check your phone, or try again.';
+                            this.busy = false;
+                            return;
+                        }
+                        await new Promise(r => setTimeout(r, 3000));
+                        const res = await fetch(this.statusUrl(id), { headers: { 'Accept': 'application/json' } });
+                        const data = await res.json();
+                        if (data.is_terminal) {
+                            this.busy = false;
+                            if (data.status === 'completed') {
+                                this.message = 'Payment received!';
+                                this.messageIsError = false;
+                                setTimeout(() => window.location.reload(), 1200);
+                            } else {
+                                this.message = data.result_desc || 'Payment was not completed.';
+                                this.messageIsError = true;
+                            }
+                            return;
+                        }
+                        this.poll(id, attempts + 1);
+                    },
+                }">
+                    <h3 class="font-heading font-semibold text-navy-900 mb-4">Pay with M-Pesa</h3>
+                    <form @submit.prevent="submit" class="grid sm:grid-cols-3 gap-3 items-end">
+                        <div>
+                            <label class="block text-xs font-medium text-navy-400 mb-1">Phone number</label>
+                            <input type="text" x-model="phone" placeholder="07XXXXXXXX" class="w-full rounded-md border-navy-100 shadow-sm focus:border-brand-pink focus:ring-brand-pink" required>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-navy-400 mb-1">Amount ({{ $organization->currency }}, whole shillings)</label>
+                            <input type="text" inputmode="numeric" x-model="amount" placeholder="100" class="w-full rounded-md border-navy-100 shadow-sm focus:border-brand-pink focus:ring-brand-pink" required>
+                        </div>
+                        <div>
+                            <button type="submit" class="btn-primary w-full" :disabled="busy" x-text="busy ? 'Waiting…' : 'Pay with M-Pesa'"></button>
+                        </div>
+                    </form>
+                    <p class="text-sm mt-3" :class="messageIsError ? 'text-red-600' : 'text-brand-teal'" x-show="message" x-text="message"></p>
+                </div>
+            @endif
+
             <!-- Record a contribution -->
             <div class="card">
                 <h3 class="font-heading font-semibold text-navy-900 mb-4">Record a contribution</h3>
@@ -111,7 +191,7 @@
                                 <tr class="border-b border-navy-50 last:border-0">
                                     <td class="py-3 pr-4 font-medium text-navy-900">{{ $payment->user->name }}</td>
                                     <td class="py-3 pr-4">{{ \App\Support\Money::format($payment->amount_cents, $payment->currency) }}</td>
-                                    <td class="py-3 pr-4 text-navy-400">{{ ucfirst(str_replace('_', ' ', $payment->payment_method)) }}</td>
+                                    <td class="py-3 pr-4 text-navy-400">{{ $payment->paymentMethodLabel() }}</td>
                                     <td class="py-3 pr-4 text-navy-400">{{ $payment->transaction_reference ?? '—' }}</td>
                                     <td class="py-3 pr-4 text-navy-400">{{ $payment->paid_at->format('d M Y H:i') }}</td>
                                     <td class="py-3 pr-4">
@@ -175,7 +255,7 @@
                                 <li class="py-3 flex items-center justify-between">
                                     <div>
                                         <p class="font-medium text-navy-900 text-sm">{{ \App\Support\Money::format($payment->amount_cents, $payment->currency) }}</p>
-                                        <p class="text-xs text-navy-400">{{ $payment->paid_at->format('d M Y H:i') }} &middot; {{ ucfirst(str_replace('_', ' ', $payment->payment_method)) }}</p>
+                                        <p class="text-xs text-navy-400">{{ $payment->paid_at->format('d M Y H:i') }} &middot; {{ $payment->paymentMethodLabel() }}</p>
                                     </div>
                                     <x-status-badge :status="$payment->status" />
                                 </li>

@@ -89,6 +89,9 @@ class ContributionController extends Controller
             ? $organization->financialAccounts()->where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get()
             : collect();
 
+        $darajaCredential = $organization->darajaCredential();
+        $mpesaEnabled = (bool) ($darajaCredential?->is_enabled && $darajaCredential->isConfigured());
+
         return view('organizations.contributions.index', compact(
             'organization',
             'activeSchedules',
@@ -101,6 +104,7 @@ class ContributionController extends Controller
             'organizationTotalVerifiedCents',
             'members',
             'accounts',
+            'mpesaEnabled',
         ));
     }
 

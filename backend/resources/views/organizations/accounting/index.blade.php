@@ -38,7 +38,7 @@
             </div>
         @endforeach
 
-        <div class="grid sm:grid-cols-3 gap-4">
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <a href="{{ route('organizations.accounts.index', $organization) }}" class="card text-center hover:ring-brand-pink transition">
                 <p class="font-medium text-navy-900">Manage accounts</p>
             </a>
@@ -48,6 +48,11 @@
             <a href="{{ route('organizations.expenses.index', $organization) }}" class="card text-center hover:ring-brand-pink transition">
                 <p class="font-medium text-navy-900">Record an expense</p>
             </a>
+            @can('view', [\App\Models\PaymentGatewayCredential::class, $organization])
+                <a href="{{ route('organizations.payments.daraja.edit', $organization) }}" class="card text-center hover:ring-brand-pink transition">
+                    <p class="font-medium text-navy-900">M-Pesa settings</p>
+                </a>
+            @endcan
         </div>
     </div>
 </x-chama-layout>

@@ -491,6 +491,166 @@ Phases 1–3.
 
 ---
 
+## Phase 4 — Payments / Daraja (M-Pesa STK Push)
+
+**Status:** Core slice complete, structurally — never tested against a live Daraja sandbox (see
+Known issues).
+
+### A decision made before writing any code: per-chama credentials, not a shared platform till
+
+The obvious-looking shortcut — one Safaricom Daraja app for the whole CHAMA WISE platform, with
+every chama's contributions flowing through it — was considered and rejected before any code was
+written. It would mean CHAMA WISE itself pooling every chama's member funds in one place, which
+is exactly what `docs/SECURITY.md`'s custody limitation (Part 28) says needs a separate legal/
+regulatory/financial-architecture review this project has not had. Instead, each chama configures
+its **own** Daraja app credentials (`payment_gateway_credentials`, one row per organization,
+encrypted at rest) and money is paid straight into that chama's own Safaricom shortcode — CHAMA
+WISE only asks Safaricom to send the STK Push prompt and records what it reports back. This is
+recorded here, not just in SECURITY.md, because it shaped essentially every other decision in
+this phase (no platform-wide `.env` Daraja secrets, a settings page instead, a callback token per
+chama rather than one shared secret).
+
+### Completed
+
+- `PaymentGatewayCredential` — per-chama Daraja app config. `consumer_key`/`consumer_secret`/
+  `passkey` encrypted via Eloquent's `encrypted` cast and marked `$hidden`; `shortcode` (not
+  secret) and a `financial_account_id` choosing which of the chama's accounts receives confirmed
+  payments; a random, unique `callback_token` generated once per chama, standing in for the
+  payload signature Safaricom's public Daraja API doesn't provide.
+- A minimal M-Pesa settings page (`organizations.payments.daraja.{edit,update}`, reached from a
+  new "M-Pesa settings" quick link on the Accounting page) — the first real settings UI in the
+  app (everything before this was either fixed by migration or had no UI at all). Deliberately
+  scoped to only what Daraja needs, not a general chama-settings page (still a placeholder).
+  Secrets are never re-displayed once saved: the form shows a masked placeholder, and leaving a
+  secret field blank on update means "keep the current value," never "clear it."
+- `DarajaClient` — thin HTTP wrapper for Safaricom's OAuth token exchange (cached ~55 min) and
+  STK Push initiation. Every call is wrapped so a transport-level failure becomes a
+  `DarajaRequestException` rather than an uncaught exception — see the real bug this caught,
+  below.
+- `StkPushService::initiate()` — creates a `PaymentTransaction` row before ever calling
+  Safaricom, so every attempt is recorded even if the outbound call itself fails; normalizes the
+  member's phone number to Safaricom's `2547.../2541...` format regardless of how it was typed in
+  (`App\Support\PhoneNumber`); records Daraja's own rejection reason if the API declines the
+  request outright.
+- `DarajaCallbackHandler` — the only code path allowed to turn a `PaymentTransaction` into a
+  verified `Contribution` and post the ledger, and only in reaction to Safaricom's own callback
+  reporting `ResultCode: 0` (Part 36: an STK Push *request* is never treated as a completed
+  payment — see `docs/FINANCIAL_LEDGER.md`'s Phase 4 section for the full reasoning, including
+  why a confirmed STK payment is auto-verified while a manually recorded one still needs a human
+  official, and why the callback's reported amount is cross-checked against cents arithmetic
+  without ever using float math). Idempotent against Safaricom retrying a callback: a transaction
+  already out of its initial `initiated`/`pending` state is left untouched on a repeat delivery.
+- `DarajaCallbackController` (`routes/api.php`, unauthenticated by necessity) — authenticates a
+  callback via the unguessable per-chama `{token}` path segment (`hash_equals()`), always
+  acknowledges Safaricom with HTTP 200 regardless of outcome (to avoid a retry storm for a
+  request correctly recognized as invalid), and is the one place in the whole app allowed to
+  create a contribution for a user with no authenticated session.
+- "Pay with M-Pesa" panel on the contributions page, shown only when a chama has Daraja
+  configured and enabled — an Alpine.js component that submits, then polls a `status` endpoint
+  every 3 seconds (capped at 30 attempts / 90 seconds) until the transaction reaches a terminal
+  state, showing "Check your phone…" and then either "Payment received!" (reloading the page) or
+  the actual failure/cancellation reason.
+- `InitiateStkPushRequest` requires a **whole-shilling** amount — Daraja's STK Push API does not
+  accept fractional amounts, unlike manual recording. Enforced by validation, not by silently
+  truncating a member-entered fractional amount.
+
+### Files created
+
+`app/Models/{PaymentGatewayCredential,PaymentTransaction}.php`,
+`app/Services/Payments/{DarajaClient,StkPushService,DarajaCallbackHandler}.php`,
+`app/Exceptions/Payments/{DarajaNotConfiguredException,DarajaRequestException}.php`,
+`app/Support/PhoneNumber.php`,
+`app/Policies/{PaymentGatewayCredentialPolicy,PaymentTransactionPolicy}.php`,
+`app/Http/Requests/{StoreDarajaCredentialRequest,InitiateStkPushRequest}.php`,
+`app/Http/Controllers/{PaymentGatewayCredentialController,StkPushController}.php`,
+`app/Http/Controllers/Api/DarajaCallbackController.php`,
+`database/migrations/2026_11_06_144945_create_payment_gateway_credentials_table.php`,
+`database/migrations/2026_11_06_144946_create_payment_transactions_table.php`,
+`resources/views/organizations/payments/daraja.blade.php`,
+`tests/Feature/Payments/{DarajaCredentialControllerTest,StkPushInitiationTest,DarajaCallbackHandlerTest}.php`.
+
+### Files modified
+
+`app/Models/{Contribution,Organization}.php` (`METHOD_MPESA_STK`, `paymentMethodLabel()`,
+`darajaCredential()`, `paymentTransactions()`), `app/Http/Controllers/ContributionController.php`
+(`$mpesaEnabled` passed to the view), `routes/web.php`, `routes/api.php` (the unauthenticated
+callback route, outside every other middleware group), `resources/views/organizations/
+contributions/index.blade.php` (the "Pay with M-Pesa" panel),
+`resources/views/organizations/accounting/index.blade.php` (the "M-Pesa settings" quick link),
+`docs/FINANCIAL_LEDGER.md`, `docs/DATABASE.md`, `docs/SECURITY.md`.
+
+### Tests executed
+
+`php artisan test` → **145 passed, 395 assertions** (up from 122). `vendor/bin/pint --test` →
+clean. Daraja's own API is mocked with `Http::fake()` in automated tests (standard practice for
+testing an HTTP integration — not the "fabricate M-Pesa success" Part 36 forbids, since these
+tests verify *this app's* handling of a given Daraja response/callback, never assert a real
+payment happened). The full non-network UI path was driven through a real headless browser
+against `php artisan serve`: the M-Pesa settings page's empty state, saving sandbox-shaped (but
+fake) credentials, reloading to confirm secrets come back masked rather than re-displayed and the
+enabled checkbox persisted, the "Pay with M-Pesa" panel correctly absent before configuring and
+present after, and — because this container has no route to Safaricom's sandbox — actually
+clicking "Pay with M-Pesa" and watching it fail gracefully with "Could not reach Safaricom: HTTP
+request returned status code 403" instead of crashing, which is exactly the real bug described
+next, confirmed fixed in a live browser rather than only in a mocked test.
+
+**One real bug was found and fixed, caught by actually trying the feature rather than by any
+automated test**: `DarajaClient`'s HTTP calls had no handling for a transport-level failure (DNS
+resolution, connection refused, or — as this sandboxed development container actually
+demonstrated, having no network route to Safaricom at all — a request rejected outright). Only a
+well-formed Daraja response with a bad status code was converted into the app's own
+`DarajaRequestException`; an exception instead of a response would have bubbled up uncaught as a
+generic 500, defeating the entire point of `StkPushController`'s friendly "couldn't reach M-Pesa,
+try again or record manually" handling. Fixed by wrapping every outbound call in a `request()`
+helper that catches `ConnectionException`/`RequestException`/any other `Throwable` and converts it
+to a `DarajaRequestException` uniformly, with a dedicated regression test
+(`test_a_transport_failure_reaching_daraja_fails_gracefully_instead_of_a_500`) simulating the
+failure via `Http::fake()` with a throwing callback, then confirmed again live in the browser.
+
+### Known issues
+
+- **Never tested against a live Daraja sandbox.** This development container has no credentials
+  for a real Safaricom Daraja app and no network route to `sandbox.safaricom.co.ke` (confirmed
+  directly — see the bug above), and a live STK Push round trip also needs a callback URL
+  Safaricom's servers can reach, which this disposable container cannot offer either. Everything
+  above is verified as thoroughly as this environment allows — correctness of the app's own logic
+  via mocked-HTTP tests, and the full UI/error-handling path in a real browser — but the actual
+  request/response shape of a real Daraja sandbox call has not been confirmed against this code.
+  **This should be the first thing verified, with real sandbox credentials, before relying on
+  this feature with a real chama.**
+- No UI for a member to initiate an STK Push on another member's behalf (an official paying for
+  someone else still has to use manual recording) — a deliberate scope limit, not an oversight,
+  since STK Push inherently targets the payer's own phone.
+- No UI to regenerate a chama's `callback_token` if it's ever suspected to have leaked — would
+  require re-pasting the new callback URL into the Safaricom developer portal too, so it's left
+  for a future settings-page pass rather than half-built now.
+- `penalty_income` still has nothing posting to it (carried over from Phase 3) — unaffected by
+  this phase.
+- Loans, reports, and chama settings remain the three honest "not built yet" placeholder pages.
+
+### Security notes
+
+Every new financial route re-verifies active membership and `manage-finances` via the same
+`ChecksChamaPermissions` pattern as every earlier phase (`PaymentGatewayCredentialPolicy`,
+`PaymentTransactionPolicy`), with cross-tenant denial covered by dedicated tests. The one
+genuinely new surface is `DarajaCallbackController`, which has no authenticated user at all by
+necessity — its authenticity model (unguessable per-chama token + matching against a transaction
+this app itself initiated) is documented in full in `docs/SECURITY.md`'s "Payments (Phase 4)"
+section, including why IP allowlisting was not used as the primary guard (Safaricom's public
+Daraja API does not sign callbacks, and its published IP ranges are not something this
+architecture should hard-depend on).
+
+### Next step
+
+Verify this phase against a real Daraja sandbox app and a reachable callback URL before trusting
+it with a real chama (see Known issues). Beyond that, per the roadmap: Phase 5 (Android, via the
+already-scaffolded `/api/v1` routes) or Phase 6's advanced modules (merry-go-round, loans,
+meetings, investments) are the next unstarted phases; financial reporting depth (income
+statement/balance sheet) remains an open enhancement on top of Phase 3's ledger. Verifying
+migrations against real MySQL 8 remains the standing recommendation from every phase so far.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

@@ -1,4 +1,4 @@
-# CHAMA WISE — Database Design (through Phase 3)
+# CHAMA WISE — Database Design (through Phase 4)
 
 Full target schema is the domain inventory in Part 29 of the product brief, built out
 incrementally per phase. This document covers what Phase 1 actually creates; later phases append
@@ -177,6 +177,37 @@ exist): `member_savings` (liability — what the chama owes its members in aggre
 posted to by any controller; reserved for when penalty collection is wired into the ledger),
 `general_expense` (expense — where `ExpenseController` posts every recorded expense).
 
+## Phase 4 tables (M-Pesa STK Push payments)
+
+See `docs/FINANCIAL_LEDGER.md`'s "M-Pesa STK Push collection (Phase 4)" section and
+`docs/SECURITY.md`'s "Payments (Phase 4)" section for the design rationale (per-chama credentials,
+callback authenticity, why initiation is never proof of payment).
+
+### `payment_gateway_credentials`
+One chama's own Daraja app configuration: `organization_id` (unique per `provider` — one row per
+chama per provider), `provider` (default/only value so far: `daraja`), `environment`
+(`sandbox`/`production`), `consumer_key`/`consumer_secret`/`passkey` (all `text`, encrypted at
+the application layer via an `encrypted` Eloquent cast — never stored or logged in plaintext),
+`shortcode` (not secret — this is the paybill/till number members see on their M-Pesa prompt),
+`financial_account_id` (which of the chama's accounts a confirmed payment posts into),
+`callback_token` (random, unique, generated once — the unguessable path segment that stands in
+for the payload signature Safaricom's public Daraja API doesn't provide), `is_enabled`,
+`created_by`/`updated_by`.
+
+### `payment_transactions`
+One STK Push attempt, from initiation to Safaricom's final word: `organization_id`, `user_id`
+(whose contribution this is), `initiated_by` (who clicked pay — normally the same person),
+`contribution_schedule_id` (nullable), `contribution_id` (nullable — set only once a successful
+callback creates one), `financial_account_id` (snapshotted from the credential at initiation
+time), `phone_number` (normalized to `2547.../2541...`), `amount_cents`, `provider`,
+`merchant_request_id`/`checkout_request_id` (Safaricom's own identifiers — the latter is how a
+callback is matched back to this row), `status`
+(`initiated`/`pending`/`completed`/`failed`/`cancelled`), `result_code`/`result_desc`
+(Safaricom's own result, copied verbatim), `mpesa_receipt_number`, `raw_callback` (the full
+callback JSON, kept for audit/support purposes). Unique on `(organization_id,
+checkout_request_id)` — scoped per organization because this app only ever looks one up within
+the organization that initiated it, never globally.
+
 ## Entity relationships
 
 ```
@@ -197,6 +228,10 @@ contributions, expenses, withdrawal_requests }───1 journal_entries (polymo
 organizations 1───* withdrawal_requests 1───* withdrawal_approvals *───1 users
 organizations 1───* expenses
 organizations 1───* account_reconciliations *───1 financial_accounts
+
+organizations 1───1 payment_gateway_credentials 1───1 financial_accounts
+organizations 1───* payment_transactions *───1 users
+payment_transactions 0───1 contributions (set once a successful callback creates one)
 ```
 
 Full ERD is expanded in `docs/ERD.md` once there's enough schema across phases to make a diagram

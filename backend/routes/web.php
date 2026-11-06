@@ -11,7 +11,9 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\JournalEntryController;
 use App\Http\Controllers\ModulePlaceholderController;
 use App\Http\Controllers\OrganizationController;
+use App\Http\Controllers\PaymentGatewayCredentialController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\StkPushController;
 use App\Http\Controllers\WithdrawalController;
 use Illuminate\Support\Facades\Route;
 
@@ -48,6 +50,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/schedules/create', [ContributionScheduleController::class, 'create'])->name('schedules.create');
             Route::post('/schedules', [ContributionScheduleController::class, 'store'])->name('schedules.store');
             Route::get('/schedules/{schedule}', [ContributionScheduleController::class, 'show'])->name('schedules.show');
+
+            Route::post('/mpesa', [StkPushController::class, 'initiate'])->name('mpesa.initiate');
+            Route::get('/mpesa/{transaction}', [StkPushController::class, 'status'])->name('mpesa.status');
+        });
+
+        Route::prefix('payments/daraja')->name('organizations.payments.daraja.')->group(function () {
+            Route::get('/', [PaymentGatewayCredentialController::class, 'edit'])->name('edit');
+            Route::put('/', [PaymentGatewayCredentialController::class, 'update'])->name('update');
         });
 
         Route::prefix('accounts')->name('organizations.accounts.')->group(function () {

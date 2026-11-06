@@ -22,8 +22,16 @@ class Contribution extends Model
 
     public const METHOD_MANUAL_MPESA = 'manual_mpesa';
 
+    public const METHOD_MPESA_STK = 'mpesa_stk';
+
     public const METHOD_OTHER = 'other';
 
+    /**
+     * Methods a member/official can pick when manually recording a payment. METHOD_MPESA_STK is
+     * deliberately excluded — it is only ever set by DarajaCallbackHandler on a confirmed STK
+     * Push callback, never chosen from the manual-recording form (Part 36: never treat an STK
+     * Push request as a completed payment; only Safaricom's callback can mark one that way).
+     */
     public const METHODS = [
         self::METHOD_CASH,
         self::METHOD_BANK,
@@ -132,5 +140,12 @@ class Contribution extends Model
     public function isVerified(): bool
     {
         return $this->status === self::STATUS_VERIFIED;
+    }
+
+    public function paymentMethodLabel(): string
+    {
+        return $this->payment_method === self::METHOD_MPESA_STK
+            ? 'M-Pesa'
+            : ucfirst(str_replace('_', ' ', $this->payment_method));
     }
 }

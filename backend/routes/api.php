@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DarajaCallbackController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -21,3 +22,10 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
 });
+
+// Unauthenticated by necessity — Safaricom sends no bearer token. Authenticity rests on the
+// unguessable {token} segment, checked inside the controller (see its docblock). Outside the
+// web/"tenant" middleware stack entirely, since there is no logged-in user on this request.
+Route::post('/mpesa/callback/{organization}/{token}', [DarajaCallbackController::class, 'handle'])
+    ->middleware('throttle:60,1')
+    ->name('api.mpesa.callback');

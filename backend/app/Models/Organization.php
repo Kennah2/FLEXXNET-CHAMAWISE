@@ -177,6 +177,26 @@ class Organization extends Model
     }
 
     /**
+     * @return HasMany<PaymentTransaction, $this>
+     */
+    public function paymentTransactions(): HasMany
+    {
+        return $this->hasMany(PaymentTransaction::class);
+    }
+
+    /**
+     * This chama's own Daraja (M-Pesa STK Push) credentials, if configured — see
+     * PaymentGatewayCredential's docblock for why each chama holds its own rather than the
+     * platform holding one shared set.
+     */
+    public function darajaCredential(): ?PaymentGatewayCredential
+    {
+        return PaymentGatewayCredential::where('organization_id', $this->id)
+            ->where('provider', PaymentGatewayCredential::PROVIDER_DARAJA)
+            ->first();
+    }
+
+    /**
      * The chama's member-savings control (liability) ledger account — the sum of every
      * member's sub-ledger balance. Provisioned by LedgerProvisioner when the chama is created.
      */

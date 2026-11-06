@@ -153,6 +153,68 @@ alongside both figures; it never adjusts the ledger itself. A non-zero variance 
 human to investigate and post a real correcting entry (an expense, a manual adjustment, a
 previously-missed contribution), not something the reconciliation feature resolves on its own.
 
+## M-Pesa STK Push collection (Phase 4)
+
+Part 35's Phase 4 is "payments/Daraja" — letting a member pay a contribution by M-Pesa STK Push
+(the "Lipa na M-Pesa" prompt) instead of only recording a payment manually. Full design rationale
+and the callback-authenticity mechanism are in `docs/SECURITY.md`'s "Payments (Phase 4)" section;
+this section covers how it fits into the ledger specifically.
+
+### Per-chama credentials, never a shared platform till
+
+Each chama configures its own Safaricom Daraja app (`PaymentGatewayCredential`, one row per
+organization) rather than the platform operating a single paybill for every chama. This is not a
+convenience choice — it's required by the custody limitation (Part 28, `docs/SECURITY.md`): a
+shared platform-wide till receiving every chama's money would make CHAMA WISE itself the custodian
+of pooled member funds, which needs a legal/regulatory review this project explicitly has not had.
+With per-chama credentials, Safaricom pays each chama's own shortcode; CHAMA WISE only initiates
+the prompt and records Safaricom's own report of what happened.
+
+### The request is never the payment
+
+`StkPushService::initiate()` creates a `PaymentTransaction` row and calls Safaricom, but nothing
+about a successful STK Push *request* — Safaricom accepting it for processing, or even the
+member entering their PIN — ever marks anything as paid. The transaction sits at `pending` until
+Safaricom's asynchronous callback arrives. Only `DarajaCallbackHandler`, reacting to a callback
+reporting `ResultCode: 0`, creates a `Contribution` and posts it to the ledger — the same
+`LedgerPoster`/`ContributionAllocator` path `ContributionController::verify()` uses for a manually
+recorded payment (debit the configured `FinancialAccount`'s ledger account, credit
+`member_savings` under the payer's `user_id`).
+
+### Auto-verification, deliberately different from manual recording
+
+A manually recorded contribution needs a human `manage-finances` official to verify it (Part 13)
+— the member's own claim that they paid isn't, by itself, trustworthy enough to move obligation
+balances. An STK Push contribution skips that step: it is created *already* `STATUS_VERIFIED`,
+with `verified_by` left `null` (so an audit trail can tell "nobody manually verified this" apart
+from "Ken verified it") and `verified_at` stamped to when the callback arrived. The reasoning is
+that Safaricom's own callback **is** the verification — it's a direct report from the payment
+network that money actually moved, which is strictly more trustworthy than a member typing in a
+transaction code by hand. `payment_method = 'mpesa_stk'` is reserved exclusively for this path and
+is deliberately absent from the manual-recording form's options (`Contribution::METHODS`), so it
+can never be chosen to shortcut verification by hand.
+
+### Why the callback amount isn't used for arithmetic
+
+Safaricom's callback reports the confirmed amount as a JSON number of whole shillings (STK Push
+never deals in fractional amounts — enforced on our side too, see `InitiateStkPushRequest`).
+`DarajaCallbackHandler` casts it straight to an int and multiplies by 100 to get cents — a single
+safe truncation of a value already guaranteed whole, not the floating-point arithmetic on money
+Part 36 forbids (that rule is about summing/dividing fractional float amounts and accumulating
+imprecision, not about casting one already-integral JSON number once). The result is compared,
+as an integer, against the amount recorded at initiation; a mismatch fails the transaction with a
+clear reason instead of posting a ledger entry for whichever figure happened to be wrong.
+
+### Idempotency against Safaricom's callback retries
+
+Safaricom retries a callback that doesn't get acknowledged. `DarajaCallbackHandler` guards against
+processing the same result twice by locking the `PaymentTransaction` row and checking it is still
+in `initiated`/`pending` before doing anything — a transaction already `completed`/`failed`/
+`cancelled` is left untouched on a repeat delivery, so a retried callback can never post the ledger
+twice for one payment. The HTTP controller (`DarajaCallbackController`) still acknowledges every
+recognized-but-already-processed callback with 200, since *not* acknowledging would just provoke
+more retries for no benefit.
+
 ## A timezone pitfall worth remembering
 
 `due_at` and `grace_expires_at` on an obligation are timestamps computed in the schedule's own
