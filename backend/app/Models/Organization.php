@@ -136,6 +136,55 @@ class Organization extends Model
         return $this->hasMany(Contribution::class);
     }
 
+    /**
+     * @return HasMany<FinancialAccount, $this>
+     */
+    public function financialAccounts(): HasMany
+    {
+        return $this->hasMany(FinancialAccount::class);
+    }
+
+    /**
+     * @return HasMany<LedgerAccount, $this>
+     */
+    public function ledgerAccounts(): HasMany
+    {
+        return $this->hasMany(LedgerAccount::class);
+    }
+
+    /**
+     * @return HasMany<JournalEntry, $this>
+     */
+    public function journalEntries(): HasMany
+    {
+        return $this->hasMany(JournalEntry::class);
+    }
+
+    /**
+     * @return HasMany<WithdrawalRequest, $this>
+     */
+    public function withdrawalRequests(): HasMany
+    {
+        return $this->hasMany(WithdrawalRequest::class);
+    }
+
+    /**
+     * @return HasMany<Expense, $this>
+     */
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class);
+    }
+
+    /**
+     * The chama's member-savings control (liability) ledger account — the sum of every
+     * member's sub-ledger balance. Provisioned by LedgerProvisioner when the chama is created.
+     */
+    public function memberSavingsAccount(): ?LedgerAccount
+    {
+        return $this->ledgerAccounts()->where('code', LedgerAccount::CODE_MEMBER_SAVINGS)->first();
+    }
+
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;

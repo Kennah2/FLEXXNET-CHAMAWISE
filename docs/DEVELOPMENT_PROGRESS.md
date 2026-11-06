@@ -340,6 +340,157 @@ sample accounts logging in by username.
 
 ---
 
+## Phase 3 — Financial Integrity (ledger, accounts, withdrawals, expenses)
+
+**Status:** Core slice complete.
+
+### Completed
+
+- Full double-entry ledger domain: `financial_accounts` (real-world cash/bank/mobile-money
+  places), `ledger_accounts` (chart of accounts, asset/liability/income/expense), `journal_entries`
+  (balanced transactions), `ledger_postings` (individual debit/credit lines, with an optional
+  `user_id` for per-member sub-ledgers).
+- `LedgerPoster` — the single code path allowed to write ledger rows. Enforces the debits-equal-credits
+  invariant, that every line is a debit XOR a credit, and that every account belongs to the posting
+  organization, all inside a DB transaction; rejects and persists nothing on any violation.
+  `reverse()` posts a mirror-image entry rather than editing or deleting — the append-only rule
+  Phase 2 established for contributions now applies to every financial record.
+- `LedgerProvisioner` — idempotently provisions the three system accounts (`member_savings`,
+  `penalty_income`, `general_expense`) per organization and a backing ledger account for every
+  `FinancialAccount` a chama creates.
+- Financial accounts: create (with an opening balance), list, per-account statement (all postings
+  affecting it), and reconciliation against a bank/till statement (records the variance, never
+  auto-corrects it).
+- Withdrawals (Part 18): a member requests against their own savings balance only (rejected at
+  422 if the request exceeds it); approval requires N distinct officials with `manage-finances`
+  (default 2, configurable per org via `settings['withdrawals']['required_approvals']`, no settings
+  UI yet); **self-approval is a hard policy block, not merely a permission gap** — see Known
+  issues/fixed #2 below; a single rejection vetoes the request; payment is a separate action that
+  re-validates the member's current balance (which can have moved since approval) before posting;
+  reversal restores both the member's savings balance and the paying account's balance.
+- Expenses: single-step record-and-post (debit `general_expense`, credit the paying account),
+  requires `manage-finances`, reversible.
+- Transactions page: org-wide chronological journal, each entry showing its full set of
+  debit/credit lines with reversed/reversal badges.
+- Accounting page: chart of accounts grouped by type with live balances, plus a system-wide
+  debits-equal-credits sanity check (if it ever fails, something bypassed `LedgerPoster`, which
+  should be structurally impossible — the check exists as a trust-but-verify display, not because
+  it's expected to trigger).
+- Phase 2 integration: verifying a contribution now requires choosing a `financial_account_id` and
+  posts a real ledger entry (debit the chosen account, credit `member_savings` under the
+  contributor's `user_id`); reversing a verified contribution reverses its linked journal entry
+  too. The contribution's `financial_account_id`/`journal_entry_id` make this traceable directly
+  from the payment record.
+- Overview page's "Accounts" / "Transactions" / "Accounting" sidebar links and the "Withdrawal
+  Approvals" pending-action card, "Accounts" stat, and "Financial summary" card are now real —
+  no longer Phase-1/2 placeholders. `ModulePlaceholderController`'s remaining honest placeholders
+  are `loans` (Phase 6), `reports`, `settings`.
+- `DevDataSeeder` now provisions the system ledger accounts, creates an "M-Pesa Till"
+  `FinancialAccount`, and verifies Ken's oldest contribution obligation through the real
+  `LedgerPoster`/`ContributionAllocator` path, so the seed demonstrates an actual posted ledger
+  entry and non-zero balances rather than empty accounting pages.
+
+### Files created
+
+`app/Models/{FinancialAccount,LedgerAccount,JournalEntry,LedgerPosting,WithdrawalRequest,WithdrawalApproval,Expense,AccountReconciliation}.php`,
+`app/Services/Ledger/{LedgerPoster,LedgerProvisioner}.php`,
+`app/Policies/{FinancialAccountPolicy,WithdrawalRequestPolicy,ExpensePolicy}.php`,
+`app/Http/Requests/{StoreFinancialAccountRequest,StoreWithdrawalRequestRequest,StoreExpenseRequest,StoreReconciliationRequest}.php`,
+`app/Http/Controllers/{FinancialAccountController,WithdrawalController,ExpenseController,JournalEntryController,AccountingController}.php`,
+`database/migrations/2026_11_06_0559*` (financial_accounts, ledger_accounts, journal_entries,
+ledger_postings, withdrawal_requests, withdrawal_approvals, expenses, account_reconciliations, and
+the contributions ledger-links migration),
+`resources/views/organizations/{accounts,withdrawals,expenses,transactions,accounting}/**`,
+`tests/Feature/Ledger/{LedgerPosterTest,FinancialAccountControllerTest,WithdrawalControllerTest,ExpenseControllerTest}.php`.
+
+### Files modified
+
+`app/Models/{Contribution,Organization}.php` (ledger relations;
+`Organization::memberSavingsAccount()`), `app/Http/Controllers/ContributionController.php`
+(verify/reverse now go through `LedgerPoster`), `app/Http/Controllers/OrganizationController.php`
+(provisions system accounts on chama creation; Overview page now computes real financial figures),
+`app/Http/Controllers/ModulePlaceholderController.php` (accounts/transactions/accounting removed
+from the placeholder list), `routes/web.php`, `resources/views/layouts/chama.blade.php` (new
+"Withdrawals" nav item), `resources/views/organizations/show.blade.php`,
+`database/seeders/DevDataSeeder.php`, `docs/FINANCIAL_LEDGER.md`, `docs/DATABASE.md`.
+
+### Tests executed
+
+`php artisan test` → **122 passed, 319 assertions**. `vendor/bin/pint --test` → clean. The full
+golden path was driven through a real headless browser against `php artisan serve`: Overview's
+updated stat cards and financial summary, creating a financial account, its statement view,
+recording a reconciliation (confirmed "Balanced" display), recording and reversing an expense, the
+org-wide transaction journal, the chart-of-accounts/accounting page, and requesting a withdrawal
+(confirmed the UI correctly blocks the requester from approving their own request, showing "Can't
+approve your own request" rather than an approve control).
+
+**One real design bug was caught during this work**, before any test was even run, by reviewing my
+own first draft of the withdrawals view rather than by a failing assertion:
+
+1. **The "Pay" action only ever appeared in a member's own "my requests" table.** That meant an
+   official could only pay out a withdrawal *they themselves* had requested — never another
+   member's approved request — which would have made the pay step nearly unusable for a treasurer
+   paying out the group's actual members. Fixed by adding a dedicated, org-wide "Approved — ready
+   to pay" section (visible to any `manage-finances` holder, not scoped to the viewer's own
+   requests) backed by a new `readyToPay` query in `WithdrawalController::index()`, and removing
+   the now-redundant Pay button from the narrower "my requests" table.
+
+Three smaller issues were also fixed along the way, not left as "known issues" since they were
+real defects, not deferred scope:
+
+2. A controller typo (`approve()` referenced an undefined `$request` in its `DB::transaction`
+   closure — leftover from refactoring) and an unused `LedgerAccount` import, both caught by
+   static review before the test suite ran.
+3. The Expenses link on the Accounting page was gated behind `@can('update', $organization)`
+   (settings-management authorization) rather than the correct, looser viewAny check the Expenses
+   index page itself actually enforces — a real authorization-logic mismatch between a link's
+   visibility and its destination's actual requirement, not a security hole (the destination page
+   enforced its own correct check either way), but worth fixing so the UI doesn't lie about who can
+   use a feature. Removed the incorrect gate.
+4. Updating `ContributionController::verify()` to require `financial_account_id` was a deliberate,
+   expected breaking change to that endpoint's contract — it broke three pre-existing Phase 2 tests
+   that didn't send the new required field. Fixed by adding a `cashAccount()` test helper and
+   updating the affected calls, while also strengthening those tests with new assertions on the
+   resulting ledger state (balances, `journal_entry_id`) rather than just making them pass again.
+
+### Known issues
+
+- No MySQL 8 verification yet — still SQLite-only for local dev/test. This is a pre-existing gap
+  carried forward from Phase 1/2, but it now matters more: ledger correctness depends on exact
+  integer arithmetic and transaction behavior that should be re-confirmed against the real target
+  driver before launch.
+- `required_approvals` for withdrawals has no settings UI — it's read from
+  `organization.setting('withdrawals.required_approvals', 2)` and can currently only be changed
+  directly in the database. A chama settings page (already a known placeholder) should expose this.
+- `penalty_income` is provisioned but nothing posts to it yet — penalty collection (assessed in
+  Phase 2's `ObligationGenerator`) isn't yet wired into the ledger. A chama's penalty income is
+  therefore not visible in the Accounting page even though penalties are tracked and shown on
+  obligations.
+- No financial reporting views yet (Part 35's "financial reporting" — income statement, balance
+  sheet style summaries) beyond the raw chart-of-accounts and transaction journal; the Overview
+  page's "Reports" placeholder remains honest.
+- Loans, reports, and chama settings remain honest "not built yet" placeholder pages (unchanged
+  from Phase 1/2, now the only three left).
+
+### Security notes
+
+Every new financial route re-verifies active membership and, where relevant, `manage-finances` via
+the same fresh-User-instance / `ChecksChamaPermissions` pattern as Phases 1–2, with cross-tenant
+denial covered by dedicated tests on every new policy (`FinancialAccountControllerTest`,
+`WithdrawalControllerTest`, `ExpenseControllerTest`). Withdrawal self-approval is blocked at the
+policy layer unconditionally — it does not depend on and cannot be loosened by any permission or
+setting, matching Part 18's explicit requirement that no official can approve their own payout.
+
+### Next step
+
+Phase 4 per the roadmap (or whichever phase the user directs next): consider loan management
+(Phase 6 per Part 35, already referenced by Overview's "Loan Applications" placeholder) or
+financial reporting depth (income statement / balance sheet views building on this phase's ledger).
+Before either, verifying migrations against real MySQL 8 remains the standing recommendation from
+Phases 1–3.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

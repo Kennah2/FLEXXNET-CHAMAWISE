@@ -43,6 +43,8 @@ class Contribution extends Model
         'organization_id',
         'user_id',
         'contribution_schedule_id',
+        'financial_account_id',
+        'journal_entry_id',
         'amount_cents',
         'currency',
         'payment_method',
@@ -109,6 +111,22 @@ class Contribution extends Model
     public function allocations(): HasMany
     {
         return $this->hasMany(ContributionAllocation::class);
+    }
+
+    /**
+     * @return BelongsTo<FinancialAccount, $this>
+     */
+    public function financialAccount(): BelongsTo
+    {
+        return $this->belongsTo(FinancialAccount::class);
+    }
+
+    /**
+     * @return BelongsTo<JournalEntry, $this>
+     */
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
     }
 
     public function isVerified(): bool

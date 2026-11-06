@@ -1,4 +1,4 @@
-# CHAMA WISE — Database Design (Phase 1 slice)
+# CHAMA WISE — Database Design (through Phase 3)
 
 Full target schema is the domain inventory in Part 29 of the product brief, built out
 incrementally per phase. This document covers what Phase 1 actually creates; later phases append
@@ -97,6 +97,86 @@ The auditable link between one verified contribution and the obligation(s) it pa
 `contribution_id`, `contribution_obligation_id`, `amount_cents`, `reversed_at` (nullable — a
 reversal stamps this rather than deleting the row).
 
+## Phase 3 tables (financial ledger)
+
+All monetary columns here are **integer minor units** (cents), consistent with Phase 2 — see
+`docs/FINANCIAL_LEDGER.md` for the full ledger design and why `LedgerPoster` is the only code path
+allowed to write `journal_entries`/`ledger_postings` rows.
+
+### `financial_accounts`
+A real-world place money sits (Part 17): `organization_id`, `name`, `type`
+(`cash`/`bank`/`mobile_money`/`other`), `account_number` (nullable), `currency`,
+`opening_balance_cents`, `is_default` (exactly one per org, enforced in
+`FinancialAccountController::store()` rather than at the schema level since "unset the others" is
+multi-row), `is_active`, `created_by`.
+
+### `ledger_accounts`
+The chart-of-accounts entry backing a `financial_account`, plus the fixed system accounts: `code`
+(unique per org, e.g. `member_savings`), `name`, `type` (`asset`/`liability`/`income`/`expense`),
+`is_system` (true for the three auto-provisioned accounts — see below — false for a
+user-created financial account's backing ledger account), `financial_account_id` (nullable FK —
+null for a system account that isn't tied to one real-world account). `balanceCents()` applies
+normal-side accounting (debit increases asset/expense, credit increases liability/income) rather
+than a naive debit-minus-credit for every type.
+
+### `journal_entries`
+One balanced transaction (Part 17's double-entry requirement): `organization_id`, `description`,
+`source_type`/`source_id` (polymorphic — links back to the `Contribution`, `Expense`, or
+`WithdrawalRequest` that caused the posting, nullable for a manual entry), `posted_at`,
+`created_by`, `status` (`posted`/`reversed`), `reverses_journal_entry_id` (nullable, self-referencing
+FK — set on the mirror entry a reversal creates, never on the original).
+
+### `ledger_postings`
+One debit or credit line of a journal entry: `journal_entry_id`, `ledger_account_id`,
+`organization_id` (denormalized for tenant-scoped queries), `user_id` (nullable — lets one control
+account like `member_savings` carry a per-member sub-ledger without a separate ledger account per
+member), `debit_cents`, `credit_cents` (a line is always exactly one of these, enforced by
+`LedgerPoster::assertBalanced()`, never both or neither).
+
+### `withdrawal_requests`
+A member's request to withdraw their savings (Part 18): `organization_id`, `user_id` (whose
+savings), `requested_by` (usually the same as `user_id`, but an official can request on a member's
+behalf), `financial_account_id` (payout source), `amount_cents`, `reason` (nullable), `status`
+(`pending`/`approved`/`rejected`/`paid`/`reversed`/`cancelled`), `required_approvals` (snapshotted
+from the org's setting at request time, so a later setting change doesn't retroactively alter an
+in-flight request), `paid_by`/`paid_at` (nullable), `journal_entry_id` (nullable — set only once
+paid).
+
+### `withdrawal_approvals`
+One official's decision on a withdrawal request: `withdrawal_request_id`, `user_id`, `decision`
+(`approved`/`rejected`), `reason` (nullable). Unique on `(withdrawal_request_id, user_id)` — one
+decision per official per request. Self-approval is blocked in `WithdrawalRequestPolicy`, not by
+this table's schema, since the schema alone can't distinguish "the requester" from "an official."
+
+### `expenses`
+A chama expense paid out of a financial account (Part 17): `organization_id`,
+`financial_account_id`, `ledger_account_id` (which expense category — currently always
+`general_expense`, the system account; `type` exists for future categorization), `amount_cents`,
+`description`, `expense_date` (cast `date:Y-m-d`, same reasoning as Phase 2's date columns),
+`recorded_by`, `status` (`posted`/`reversed`), `journal_entry_id`.
+
+### `account_reconciliations`
+A point-in-time comparison between a bank/till statement and the ledger (Part 17): `organization_id`,
+`financial_account_id`, `statement_date`, `statement_balance_cents`, `computed_balance_cents` (the
+ledger balance at the time of reconciliation), `variance_cents` (`statement - computed`; zero means
+balanced), `notes` (nullable), `recorded_by`. Reconciliation is a record, never a correction — a
+non-zero variance is surfaced, not auto-fixed; closing it requires a real adjustment (expense,
+withdrawal, or manual journal entry) that explains the difference.
+
+### Links added to `contributions`
+Phase 2's `contributions` table gains `financial_account_id` and `journal_entry_id` (both nullable
+FK, added in `2026_11_06_055949_add_ledger_links_to_contributions_table`) — set once a contribution
+is verified and posted to the ledger, so a contribution's ledger entry (and its reversal) can be
+found directly from the payment record.
+
+### System ledger accounts
+Three accounts are auto-provisioned per organization by `LedgerProvisioner::provisionSystemAccounts()`
+(idempotent — called defensively from every entry point that might run before an org's accounts
+exist): `member_savings` (liability — what the chama owes its members in aggregate, split by
+`ledger_postings.user_id` into each member's sub-balance), `penalty_income` (income — not yet
+posted to by any controller; reserved for when penalty collection is wired into the ledger),
+`general_expense` (expense — where `ExpenseController` posts every recorded expense).
+
 ## Entity relationships
 
 ```
@@ -108,6 +188,15 @@ users, organizations 1───* audit_logs (both nullable depending on action s
 organizations 1───* contribution_schedules 1───* contribution_obligations *───1 users
 contribution_schedules 1───* contributions *───1 users
 contributions 1───* contribution_allocations *───1 contribution_obligations
+
+organizations 1───* financial_accounts 1───1 ledger_accounts
+organizations 1───* journal_entries 1───* ledger_postings *───1 ledger_accounts
+ledger_postings *───1 users (nullable, member sub-ledger)
+journal_entries 0───1 journal_entries (self-referencing reversal link)
+contributions, expenses, withdrawal_requests }───1 journal_entries (polymorphic source / direct FK)
+organizations 1───* withdrawal_requests 1───* withdrawal_approvals *───1 users
+organizations 1───* expenses
+organizations 1───* account_reconciliations *───1 financial_accounts
 ```
 
 Full ERD is expanded in `docs/ERD.md` once there's enough schema across phases to make a diagram

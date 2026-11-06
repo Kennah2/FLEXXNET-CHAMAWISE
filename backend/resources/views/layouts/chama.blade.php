@@ -36,11 +36,12 @@
                             ['key' => 'overview', 'label' => 'Overview', 'icon' => 'home', 'route' => route('organizations.show', $organization)],
                             ['key' => 'members', 'label' => 'Members', 'icon' => 'users', 'route' => route('organizations.members.index', $organization)],
                             ['key' => 'contributions', 'label' => 'Contributions', 'icon' => 'currency', 'route' => route('organizations.contributions.index', $organization)],
+                            ['key' => 'withdrawals', 'label' => 'Withdrawals', 'icon' => 'arrow-right', 'route' => route('organizations.withdrawals.index', $organization)],
                             ['key' => 'loans', 'label' => 'Loans', 'icon' => 'calculator', 'route' => route('organizations.module.show', [$organization, 'loans'])],
-                            ['key' => 'accounts', 'label' => 'Accounts', 'icon' => 'card', 'route' => route('organizations.module.show', [$organization, 'accounts'])],
-                            ['key' => 'transactions', 'label' => 'Transactions', 'icon' => 'list', 'route' => route('organizations.module.show', [$organization, 'transactions'])],
+                            ['key' => 'accounts', 'label' => 'Accounts', 'icon' => 'card', 'route' => route('organizations.accounts.index', $organization)],
+                            ['key' => 'transactions', 'label' => 'Transactions', 'icon' => 'list', 'route' => route('organizations.transactions.index', $organization)],
                             ['key' => 'reports', 'label' => 'Reports', 'icon' => 'chart', 'route' => route('organizations.module.show', [$organization, 'reports'])],
-                            ['key' => 'accounting', 'label' => 'Accounting', 'icon' => 'book', 'route' => route('organizations.module.show', [$organization, 'accounting'])],
+                            ['key' => 'accounting', 'label' => 'Accounting', 'icon' => 'book', 'route' => route('organizations.accounting.index', $organization)],
                             ['key' => 'settings', 'label' => 'Settings', 'icon' => 'cog', 'route' => route('organizations.module.show', [$organization, 'settings'])],
                         ];
                     @endphp

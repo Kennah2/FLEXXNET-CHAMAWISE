@@ -5,7 +5,10 @@ namespace Tests\Feature\Contributions;
 use App\Models\Contribution;
 use App\Models\ContributionObligation;
 use App\Models\ContributionSchedule;
+use App\Models\FinancialAccount;
+use App\Models\Organization;
 use App\Services\Contributions\ObligationGenerator;
+use App\Services\Ledger\LedgerProvisioner;
 use Database\Seeders\PermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\CreatesChamas;
@@ -38,6 +41,26 @@ class ContributionControllerTest extends TestCase
             'status' => ContributionSchedule::STATUS_ACTIVE,
             'created_by' => $createdBy,
         ]);
+    }
+
+    private function cashAccount(Organization $organization, int $createdBy): FinancialAccount
+    {
+        $provisioner = app(LedgerProvisioner::class);
+        $provisioner->provisionSystemAccounts($organization);
+
+        $account = FinancialAccount::create([
+            'organization_id' => $organization->id,
+            'name' => 'Cash',
+            'type' => FinancialAccount::TYPE_CASH,
+            'currency' => $organization->currency,
+            'opening_balance_cents' => 0,
+            'is_default' => true,
+            'created_by' => $createdBy,
+        ]);
+
+        $provisioner->provisionForFinancialAccount($account);
+
+        return $account;
     }
 
     public function test_a_member_can_record_their_own_contribution(): void
@@ -95,6 +118,7 @@ class ContributionControllerTest extends TestCase
     {
         [$ken, $organization] = $this->createChamaWithChairperson('Verify Chama');
         $schedule = $this->dailySchedule($organization->id, $ken->id);
+        $account = $this->cashAccount($organization, $ken->id);
         $member = $this->addMemberWithRole($organization, 'member');
 
         $this->actingAs($member)->post(route('organizations.contributions.store', $organization), [
@@ -106,16 +130,26 @@ class ContributionControllerTest extends TestCase
         $contribution = Contribution::firstWhere('user_id', $member->id);
 
         // The member who made the payment cannot verify their own payment.
-        $forbidden = $this->actingAs($member)->post(route('organizations.contributions.verify', [$organization, $contribution]));
+        $forbidden = $this->actingAs($member)->post(route('organizations.contributions.verify', [$organization, $contribution]), [
+            'financial_account_id' => $account->id,
+        ]);
         $forbidden->assertForbidden();
 
-        $response = $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $contribution]));
+        $response = $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $contribution]), [
+            'financial_account_id' => $account->id,
+        ]);
         $response->assertRedirect();
 
         $contribution->refresh();
         $this->assertSame(Contribution::STATUS_VERIFIED, $contribution->status);
         $this->assertSame($ken->id, $contribution->verified_by);
         $this->assertGreaterThan(0, $contribution->allocations()->count());
+
+        // Verification must post a balanced ledger entry: cash in, member savings credited.
+        $this->assertNotNull($contribution->journal_entry_id);
+        $this->assertSame($account->id, $contribution->financial_account_id);
+        $this->assertSame(10000, $account->fresh()->balanceCents());
+        $this->assertSame(10000, $organization->memberSavingsAccount()->balanceCents($member->id));
     }
 
     public function test_rejecting_a_contribution_does_not_allocate_it(): void
@@ -147,6 +181,7 @@ class ContributionControllerTest extends TestCase
     {
         [$ken, $organization] = $this->createChamaWithChairperson('Duplicate Reference Chama');
         $schedule = $this->dailySchedule($organization->id, $ken->id);
+        $account = $this->cashAccount($organization, $ken->id);
 
         $this->actingAs($ken)->post(route('organizations.contributions.store', $organization), [
             'contribution_schedule_id' => $schedule->id,
@@ -156,7 +191,9 @@ class ContributionControllerTest extends TestCase
             'paid_at' => now()->format('Y-m-d\TH:i'),
         ]);
         $first = Contribution::firstWhere('transaction_reference', 'QGH7XYZ123');
-        $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $first]));
+        $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $first]), [
+            'financial_account_id' => $account->id,
+        ]);
 
         $this->actingAs($ken)->post(route('organizations.contributions.store', $organization), [
             'contribution_schedule_id' => $schedule->id,
@@ -167,7 +204,9 @@ class ContributionControllerTest extends TestCase
         ]);
         $second = Contribution::where('transaction_reference', 'QGH7XYZ123')->where('id', '!=', $first->id)->first();
 
-        $response = $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $second]));
+        $response = $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $second]), [
+            'financial_account_id' => $account->id,
+        ]);
         $response->assertStatus(422);
 
         $second->refresh();
@@ -178,6 +217,7 @@ class ContributionControllerTest extends TestCase
     {
         [$ken, $organization] = $this->createChamaWithChairperson('Reverse Chama');
         $schedule = $this->dailySchedule($organization->id, $ken->id);
+        $account = $this->cashAccount($organization, $ken->id);
 
         $this->actingAs($ken)->post(route('organizations.contributions.store', $organization), [
             'contribution_schedule_id' => $schedule->id,
@@ -186,7 +226,9 @@ class ContributionControllerTest extends TestCase
             'paid_at' => now()->format('Y-m-d\TH:i'),
         ]);
         $contribution = Contribution::firstWhere('user_id', $ken->id);
-        $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $contribution]));
+        $this->actingAs($ken)->post(route('organizations.contributions.verify', [$organization, $contribution]), [
+            'financial_account_id' => $account->id,
+        ]);
 
         $response = $this->actingAs($ken)->post(route('organizations.contributions.reverse', [$organization, $contribution]));
         $response->assertRedirect();
@@ -196,6 +238,10 @@ class ContributionControllerTest extends TestCase
 
         $allocation = $contribution->allocations()->first();
         $this->assertNotNull($allocation->reversed_at);
+
+        // The ledger entry itself must also be reversed — cash and savings both back to zero.
+        $this->assertSame(0, $account->fresh()->balanceCents());
+        $this->assertSame(0, $organization->memberSavingsAccount()->balanceCents($ken->id));
     }
 
     public function test_a_member_of_another_chama_cannot_view_this_chamas_contributions_page(): void

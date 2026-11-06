@@ -8,8 +8,11 @@ use App\Models\Contribution;
 use App\Models\Invitation;
 use App\Models\Organization;
 use App\Models\User;
+use App\Models\WithdrawalRequest;
 use App\Services\AuditLogger;
 use App\Services\ChamaRoleProvisioner;
+use App\Services\Ledger\LedgerProvisioner;
+use App\Support\ChamaPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
@@ -34,9 +37,10 @@ class OrganizationController extends Controller
     public function store(
         StoreOrganizationRequest $request,
         ChamaRoleProvisioner $provisioner,
+        LedgerProvisioner $ledgerProvisioner,
         AuditLogger $auditLogger,
     ): RedirectResponse {
-        $organization = DB::transaction(function () use ($request, $provisioner) {
+        $organization = DB::transaction(function () use ($request, $provisioner, $ledgerProvisioner) {
             $organization = Organization::create([
                 ...$request->validated(),
                 'currency' => $request->validated('currency') ?? 'KES',
@@ -45,6 +49,7 @@ class OrganizationController extends Controller
             ]);
 
             $provisioner->provision($organization, $request->user(), 'chairperson');
+            $ledgerProvisioner->provisionSystemAccounts($organization);
 
             ChamaMembership::create([
                 'organization_id' => $organization->id,
@@ -75,19 +80,38 @@ class OrganizationController extends Controller
             ->count();
 
         app(PermissionRegistrar::class)->setPermissionsTeamId($organization->id);
-        $currentUserRole = User::find(request()->user()->id)->getRoleNames()->first();
+        $freshUser = User::find(request()->user()->id);
+        $currentUserRole = $freshUser->getRoleNames()->first();
+        $canManageFinances = $freshUser->can(ChamaPermissions::MANAGE_FINANCES);
 
         $hasContributionSchedules = $organization->contributionSchedules()->exists();
         $totalVerifiedContributionsCents = $organization->contributions()
             ->where('status', Contribution::STATUS_VERIFIED)
             ->sum('amount_cents');
 
+        $financialAccounts = $organization->financialAccounts()->where('is_active', true)->get();
+        $totalCashCents = $financialAccounts->sum(fn ($account) => $account->balanceCents());
+        $hasFinancialAccounts = $financialAccounts->isNotEmpty();
+
+        $memberSavingsCents = $organization->memberSavingsAccount()?->balanceCents() ?? 0;
+
+        $pendingWithdrawalApprovalsCount = $canManageFinances
+            ? WithdrawalRequest::where('organization_id', $organization->id)
+                ->where('status', WithdrawalRequest::STATUS_PENDING)
+                ->count()
+            : 0;
+
         return view('organizations.show', compact(
             'organization',
             'pendingInvitationsCount',
             'currentUserRole',
+            'canManageFinances',
             'hasContributionSchedules',
             'totalVerifiedContributionsCents',
+            'hasFinancialAccounts',
+            'totalCashCents',
+            'memberSavingsCents',
+            'pendingWithdrawalApprovalsCount',
         ));
     }
 }

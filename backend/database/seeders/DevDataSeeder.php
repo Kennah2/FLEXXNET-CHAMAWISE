@@ -3,11 +3,17 @@
 namespace Database\Seeders;
 
 use App\Models\ChamaMembership;
+use App\Models\Contribution;
+use App\Models\ContributionObligation;
 use App\Models\ContributionSchedule;
+use App\Models\FinancialAccount;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\ChamaRoleProvisioner;
+use App\Services\Contributions\ContributionAllocator;
 use App\Services\Contributions\ObligationGenerator;
+use App\Services\Ledger\LedgerPoster;
+use App\Services\Ledger\LedgerProvisioner;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -107,6 +113,64 @@ class DevDataSeeder extends Seeder
         );
 
         app(ObligationGenerator::class)->generate($schedule);
+
+        $ledgerProvisioner = app(LedgerProvisioner::class);
+        $ledgerProvisioner->provisionSystemAccounts($chama);
+
+        $mpesa = FinancialAccount::firstOrCreate(
+            ['organization_id' => $chama->id, 'name' => 'M-Pesa Till'],
+            [
+                'type' => FinancialAccount::TYPE_MOBILE_MONEY,
+                'currency' => 'KES',
+                'opening_balance_cents' => 0,
+                'is_default' => true,
+                'created_by' => $ken->id,
+            ]
+        );
+        $ledgerProvisioner->provisionForFinancialAccount($mpesa);
+
+        // Verify Ken's oldest obligation, so the seed demonstrates a real posted ledger entry
+        // and a non-zero account/savings balance rather than an empty ledger.
+        $oldestObligation = ContributionObligation::where('contribution_schedule_id', $schedule->id)
+            ->where('user_id', $ken->id)
+            ->orderBy('period_start')
+            ->first();
+
+        if ($oldestObligation && Contribution::where('organization_id', $chama->id)->where('user_id', $ken->id)->doesntExist()) {
+            $contribution = Contribution::create([
+                'organization_id' => $chama->id,
+                'user_id' => $ken->id,
+                'contribution_schedule_id' => $schedule->id,
+                'amount_cents' => $oldestObligation->amount_due_cents,
+                'currency' => 'KES',
+                'payment_method' => Contribution::METHOD_MANUAL_MPESA,
+                'transaction_reference' => 'SEED1DEMO1',
+                'paid_at' => $oldestObligation->period_start,
+                'recorded_by' => $ken->id,
+                'status' => Contribution::STATUS_PENDING_VERIFICATION,
+            ]);
+
+            $entry = app(LedgerPoster::class)->post(
+                $chama,
+                "Contribution verified: {$ken->name}",
+                [
+                    ['ledger_account_id' => $mpesa->ledgerAccount->id, 'debit_cents' => $contribution->amount_cents],
+                    ['ledger_account_id' => $chama->memberSavingsAccount()->id, 'credit_cents' => $contribution->amount_cents, 'user_id' => $ken->id],
+                ],
+                $ken,
+                source: $contribution,
+            );
+
+            $contribution->update([
+                'status' => Contribution::STATUS_VERIFIED,
+                'verified_by' => $ken->id,
+                'verified_at' => now(),
+                'financial_account_id' => $mpesa->id,
+                'journal_entry_id' => $entry->id,
+            ]);
+
+            app(ContributionAllocator::class)->allocate($contribution);
+        }
 
         $this->command?->info('Seeded sample chama: Ken and Frank Savings Group. Log in as "ken" or "frank" (or their email), password: "password".');
     }

@@ -1,8 +1,8 @@
 # CHAMA WISE — Financial Ledger & Money Handling
 
 This document covers how money is represented and calculated, starting with Phase 2
-(contributions). The full double-entry ledger (accounts, journal entries, reconciliation) is
-Phase 3 — this page will grow a corresponding section when that lands.
+(contributions), and the full double-entry ledger (accounts, journal entries, withdrawals,
+expenses, reconciliation) added in Phase 3.
 
 ## Why integer minor units, not DECIMAL or bcmath
 
@@ -63,6 +63,95 @@ that actually matters — the same reference must never be verified twice — is
 **verified** contributions only. An earlier version of this migration had a blanket unique
 constraint; it was removed after a test caught it silently blocking legitimate re-entry (see
 `docs/DEVELOPMENT_PROGRESS.md`).
+
+## Double-entry ledger (Phase 3)
+
+Part 17 requires a proper double-entry ledger, not a single running balance. `LedgerPoster` is the
+**only** code path in the application allowed to create `JournalEntry`/`LedgerPosting` rows —
+every financial action (verifying a contribution, recording an expense, paying a withdrawal) goes
+through it rather than writing postings directly, so the balance invariant below can't be bypassed
+by a future feature that forgets to check it.
+
+### The balance invariant
+
+`LedgerPoster::post()` takes a description, a list of debit/credit lines, and an actor, and before
+touching the database it runs `assertBalanced()`:
+
+- at least two lines;
+- every line is a debit **or** a credit, never both and never neither, and never negative;
+- every `ledger_account_id` actually belongs to the organization posting the entry (defense against
+  a cross-tenant account id ever reaching this far);
+- total debits across all lines equal total credits.
+
+Only if all of that holds does it open a `DB::transaction()` and write the `JournalEntry` and its
+`LedgerPosting` rows together. A caller that tries to post an unbalanced entry gets an
+`InvalidArgumentException` and nothing is persisted — covered by a test that asserts the database
+is untouched after a rejected post, not just that an exception was thrown.
+
+### Chart of accounts and normal-side balances
+
+`LedgerAccount::balanceCents()` does not compute `debits - credits` uniformly — that's only correct
+for asset and expense accounts. Liability and income accounts have credit as their normal
+(increasing) side, so their balance is `credits - debits`. Getting this backwards is a classic
+ledger bug that silently produces negative balances for perfectly healthy liability accounts, so
+the type-based `match` is covered directly by `LedgerPosterTest`.
+
+Three system accounts are auto-provisioned per organization (`LedgerProvisioner::provisionSystemAccounts()`,
+idempotent, called defensively from several entry points rather than assumed to have run once at
+org creation): `member_savings` (liability), `penalty_income` (income, not yet posted to),
+`general_expense` (expense). Every `FinancialAccount` a chama creates (a till, a bank account) also
+gets its own backing asset `LedgerAccount` via `provisionForFinancialAccount()`.
+
+### Member sub-ledger
+
+A chama doesn't need one `member_savings` ledger account per member — `ledger_postings.user_id`
+(nullable) lets a single liability account carry a per-member split. `LedgerAccount::balanceCents($userId)`
+filters postings to one member, so "how much does the chama owe Ken" and "what's the chama's total
+savings liability" are the same account queried two ways, not two separate data structures that
+could drift apart.
+
+### Reversal, never deletion (extended to the ledger)
+
+`LedgerPoster::reverse()` follows the same rule Phase 2 established for contributions: a posted
+entry is never edited or deleted. Reversing an entry posts a **new** mirror-image entry (every
+line's debit and credit swapped, same `user_id` where set), marks the original `status = reversed`,
+and refuses to reverse an already-reversed entry. The original postings are untouched — the full
+history of what was posted, when, and that it was later reversed, stays queryable forever.
+
+### Withdrawals: a three-step workflow, not one action
+
+Part 18 separates requesting, approving, and paying out a withdrawal, and this codebase keeps them
+as three distinct actions rather than collapsing approval into payment:
+
+- **Approve** requires `required_approvals` (an org setting, default 2, snapshotted onto the
+  request at creation time) distinct officials with `manage-finances`, each recorded as a
+  `WithdrawalApproval`. **Self-approval is a hard-coded block in `WithdrawalRequestPolicy::approve()`**
+  — `$user->id === $withdrawal->user_id` is checked before permission, so it can't be configured
+  away by a chama's settings. A single rejection vetoes the whole request regardless of how many
+  approvals it already has.
+- **Pay** is a separate action, deliberately not folded into the final approval, because a
+  member's balance can move between approval and payment (another withdrawal could pay out first,
+  or a reversal could land) — `WithdrawalController::pay()` re-validates the current balance against
+  the requested amount immediately before posting, and rejects (422) if it no longer holds. This
+  is covered by a dedicated test that approves a request, drains the balance with a second
+  withdrawal, then asserts the first one's payment attempt is rejected.
+- **Reverse** (after payment) posts a mirror journal entry the same way any other reversal does,
+  restoring the member's savings balance and the paying account's balance.
+
+### Expenses
+
+A simpler one-step flow (Part 17 doesn't require an approval workflow for expenses the way Part 18
+does for withdrawals): recording an expense immediately posts the ledger entry (debit
+`general_expense`, credit the paying `FinancialAccount`'s ledger account) and requires
+`manage-finances`. Reversal follows the same mirror-entry rule as everything else.
+
+### Reconciliation
+
+An `AccountReconciliation` row is a snapshot comparison, not a correction mechanism — recording one
+computes `variance_cents = statement_balance_cents - computed_balance_cents` and stores it
+alongside both figures; it never adjusts the ledger itself. A non-zero variance is a signal for a
+human to investigate and post a real correcting entry (an expense, a manual adjustment, a
+previously-missed contribution), not something the reconciliation feature resolves on its own.
 
 ## A timezone pitfall worth remembering
 

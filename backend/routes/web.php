@@ -1,13 +1,18 @@
 <?php
 
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\ChamaMembershipController;
 use App\Http\Controllers\ContributionController;
 use App\Http\Controllers\ContributionScheduleController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\JournalEntryController;
 use App\Http\Controllers\ModulePlaceholderController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\WithdrawalController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -45,8 +50,35 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/schedules/{schedule}', [ContributionScheduleController::class, 'show'])->name('schedules.show');
         });
 
+        Route::prefix('accounts')->name('organizations.accounts.')->group(function () {
+            Route::get('/', [FinancialAccountController::class, 'index'])->name('index');
+            Route::get('/create', [FinancialAccountController::class, 'create'])->name('create');
+            Route::post('/', [FinancialAccountController::class, 'store'])->name('store');
+            Route::get('/{account}', [FinancialAccountController::class, 'show'])->name('show');
+            Route::post('/{account}/reconcile', [FinancialAccountController::class, 'reconcile'])->name('reconcile');
+        });
+
+        Route::get('/transactions', [JournalEntryController::class, 'index'])->name('organizations.transactions.index');
+        Route::get('/accounting', [AccountingController::class, 'index'])->name('organizations.accounting.index');
+
+        Route::prefix('withdrawals')->name('organizations.withdrawals.')->group(function () {
+            Route::get('/', [WithdrawalController::class, 'index'])->name('index');
+            Route::post('/', [WithdrawalController::class, 'store'])->name('store');
+            Route::post('/{withdrawal}/approve', [WithdrawalController::class, 'approve'])->name('approve');
+            Route::post('/{withdrawal}/reject', [WithdrawalController::class, 'reject'])->name('reject');
+            Route::post('/{withdrawal}/pay', [WithdrawalController::class, 'pay'])->name('pay');
+            Route::post('/{withdrawal}/cancel', [WithdrawalController::class, 'cancel'])->name('cancel');
+            Route::post('/{withdrawal}/reverse', [WithdrawalController::class, 'reverse'])->name('reverse');
+        });
+
+        Route::prefix('expenses')->name('organizations.expenses.')->group(function () {
+            Route::get('/', [ExpenseController::class, 'index'])->name('index');
+            Route::post('/', [ExpenseController::class, 'store'])->name('store');
+            Route::post('/{expense}/reverse', [ExpenseController::class, 'reverse'])->name('reverse');
+        });
+
         Route::get('/{module}', [ModulePlaceholderController::class, 'show'])
-            ->whereIn('module', ['loans', 'accounts', 'transactions', 'reports', 'accounting', 'settings'])
+            ->whereIn('module', ['loans', 'reports', 'settings'])
             ->name('organizations.module.show');
     });
 

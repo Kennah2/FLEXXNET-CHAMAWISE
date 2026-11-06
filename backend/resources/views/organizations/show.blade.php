@@ -49,14 +49,17 @@
                         </div>
                     </div>
                 </a>
-                <a href="{{ route('organizations.module.show', [$organization, 'accounts']) }}" class="card flex items-center justify-between opacity-60 hover:opacity-100 transition">
+                <a href="{{ route('organizations.withdrawals.index', $organization) }}" class="card flex items-center justify-between hover:ring-brand-pink transition">
                     <div class="flex items-center gap-3">
                         <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-brand-teal"><x-icon name="currency" class="h-5 w-5" /></span>
                         <div>
                             <p class="font-medium text-navy-900 text-sm">Withdrawal Approvals</p>
-                            <p class="text-xs text-navy-400">Coming in Phase 3</p>
+                            <p class="text-xs text-navy-400">{{ $canManageFinances ? 'Awaiting your approval' : 'Officials only' }}</p>
                         </div>
                     </div>
+                    @if ($canManageFinances)
+                        <span class="text-lg font-heading font-bold text-navy-900">{{ $pendingWithdrawalApprovalsCount }}</span>
+                    @endif
                 </a>
             </div>
         </div>
@@ -90,12 +93,17 @@
                     <p class="text-sm font-medium text-navy-400 mt-3">No schedule set up yet</p>
                 @endif
             </a>
-            <a href="{{ route('organizations.module.show', [$organization, 'accounts']) }}" class="card opacity-70 hover:opacity-100 transition">
+            <a href="{{ route('organizations.accounts.index', $organization) }}" class="card hover:ring-brand-pink transition">
                 <div class="flex items-center justify-between">
                     <p class="text-sm text-navy-400">Accounts</p>
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><x-icon name="card" class="h-5 w-5" /></span>
                 </div>
-                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 3</p>
+                @if ($hasFinancialAccounts)
+                    <p class="text-2xl font-heading font-bold text-navy-900 mt-3">{{ \App\Support\Money::format($totalCashCents, $organization->currency) }}</p>
+                    <p class="text-xs text-brand-pink mt-1">View all &rarr;</p>
+                @else
+                    <p class="text-sm font-medium text-navy-400 mt-3">No accounts set up yet</p>
+                @endif
             </a>
         </div>
 
@@ -108,8 +116,8 @@
                         ['label' => 'Record Contribution', 'icon' => 'currency', 'bg' => 'bg-emerald-50', 'fg' => 'text-brand-teal', 'route' => route('organizations.contributions.index', $organization)],
                         ['label' => 'Apply for Loan', 'icon' => 'calculator', 'bg' => 'bg-purple-50', 'fg' => 'text-purple-600', 'route' => route('organizations.module.show', [$organization, 'loans'])],
                         ['label' => 'Add Member', 'icon' => 'plus', 'bg' => 'bg-blue-50', 'fg' => 'text-blue-600', 'route' => route('organizations.members.index', $organization)],
-                        ['label' => 'Record Transaction', 'icon' => 'list', 'bg' => 'bg-indigo-50', 'fg' => 'text-indigo-600', 'route' => route('organizations.module.show', [$organization, 'transactions'])],
-                        ['label' => 'Add Account', 'icon' => 'card', 'bg' => 'bg-amber-50', 'fg' => 'text-amber-600', 'route' => route('organizations.module.show', [$organization, 'accounts'])],
+                        ['label' => 'Record Expense', 'icon' => 'list', 'bg' => 'bg-indigo-50', 'fg' => 'text-indigo-600', 'route' => route('organizations.expenses.index', $organization)],
+                        ['label' => 'Add Account', 'icon' => 'card', 'bg' => 'bg-amber-50', 'fg' => 'text-amber-600', 'route' => route('organizations.accounts.create', $organization)],
                         ['label' => 'View Reports', 'icon' => 'chart', 'bg' => 'bg-rose-50', 'fg' => 'text-brand-pink', 'route' => route('organizations.module.show', [$organization, 'reports'])],
                     ];
                 @endphp
@@ -143,10 +151,23 @@
             </div>
 
             <div class="card">
-                <h3 class="font-heading font-semibold text-navy-900 mb-2">Financial summary</h3>
-                <p class="text-sm text-navy-400 mb-4">Ledger and transaction history — coming in Phase 3.</p>
-                <a href="{{ route('organizations.module.show', [$organization, 'accounting']) }}" class="text-sm text-brand-pink hover:underline inline-flex items-center gap-1">
-                    See what's coming <x-icon name="arrow-right" class="h-4 w-4" />
+                <h3 class="font-heading font-semibold text-navy-900 mb-4">Financial summary</h3>
+                @if ($hasFinancialAccounts)
+                    <ul class="space-y-3">
+                        <li class="flex items-center justify-between text-sm">
+                            <span class="text-navy-400">Cash &amp; bank balance</span>
+                            <span class="font-semibold text-navy-900">{{ \App\Support\Money::format($totalCashCents, $organization->currency) }}</span>
+                        </li>
+                        <li class="flex items-center justify-between text-sm">
+                            <span class="text-navy-400">Owed to members (savings)</span>
+                            <span class="font-semibold text-navy-900">{{ \App\Support\Money::format($memberSavingsCents, $organization->currency) }}</span>
+                        </li>
+                    </ul>
+                @else
+                    <p class="text-sm text-navy-400">Add a financial account to start tracking the ledger.</p>
+                @endif
+                <a href="{{ route('organizations.accounting.index', $organization) }}" class="text-sm text-brand-pink hover:underline inline-flex items-center gap-1 mt-4">
+                    View accounting <x-icon name="arrow-right" class="h-4 w-4" />
                 </a>
             </div>
         </div>
