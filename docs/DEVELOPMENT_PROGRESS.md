@@ -651,6 +651,148 @@ migrations against real MySQL 8 remains the standing recommendation from every p
 
 ---
 
+## Phase 5 — REST API (Flutter Android deferred)
+
+**Status:** v1 REST API complete and tested. The Flutter app itself — nominally also "Phase 5"
+per the roadmap — is deliberately not started this session; see below for why.
+
+### Scope decision, made with the user before writing any code
+
+Phase 5 per the roadmap is "Android (Flutter)." This container has no Flutter/Dart SDK and,
+more importantly, no Android emulator or device — so even after installing Flutter, there would
+be no way to actually run the app and see it work, breaking the verification standard every
+prior phase was held to (real browser screenshots for every web feature, real HTTP round-trips
+for Phase 4's payment flows). Asked explicitly, the user chose to build the REST API the mobile
+app will consume first, fully tested, and pause there rather than write Flutter code nobody
+(human or AI) could run and watch work in this environment. Building a mobile UI against
+unverifiable tooling would have produced the one thing this project has consistently avoided:
+code whose correctness is merely asserted, not demonstrated.
+
+### Completed
+
+- **Extracted the business logic every protected API write-endpoint needed to reuse, instead of
+  duplicating it** (Part 15: the API must never hold its own copy of financial/business rules).
+  Four controllers (`ContributionController`, `WithdrawalController`, `ExpenseController`,
+  `FinancialAccountController`) had their write-action logic living directly in the controller
+  method bodies; each was pulled out into a dedicated service
+  (`App\Services\{Contributions\ContributionService,Withdrawals\WithdrawalService,Expenses\ExpenseService,Accounts\FinancialAccountService}`),
+  with the full pre-existing test suite re-run after **every individual extraction** to confirm
+  zero behavior change before moving to the next one. The web controllers now call these services
+  too — there is exactly one implementation of "verify a contribution" or "pay a withdrawal," not
+  a web copy and an API copy.
+- Sanctum-based token authentication (`App\Http\Controllers\Api\V1\AuthController`): register,
+  login (by username or email, case-insensitively, same as web), logout (revokes the specific
+  token used), and `/auth/me`. This is the first actual implementation of the "device/session
+  management" `docs/SECURITY.md` has described as a Phase 1 feature since it was written — nothing
+  issued or revoked a Sanctum token anywhere in the codebase before this phase.
+- A full `/api/v1` surface mirroring the web app's chama-scoped features: chamas (list mine with
+  my per-chama roles, show), members, contributions (record/verify/reject/reverse,
+  M-Pesa STK Push initiate/status), contribution schedules, withdrawals (request through the full
+  approve/pay/cancel/reverse lifecycle), expenses, financial accounts (create/show/reconcile),
+  accounting (chart of accounts), and the transaction journal. Every protected route sits behind
+  `auth:sanctum` + `verified` + the same `tenant` middleware and Policy classes the web app uses —
+  tenant isolation is identical, not a parallel implementation (`docs/TENANCY.md`).
+- API Resource classes (`app/Http/Resources/*`) for every exposed model, each monetary field
+  given both as integer cents (what the app computes with) and a pre-formatted string (so no
+  client has to reimplement `Money::format()`).
+- M-Pesa STK Push needed no separate API controller at all: `StkPushController` already branched
+  on `$request->wantsJson()` since Phase 4, so the same controller class is simply routed under
+  `/api/v1` too.
+- `docs/API.md` — full endpoint reference, auth model, response conventions, and the
+  services-not-duplicated architecture note, written as what a future Flutter (or any other
+  client) session should read first.
+
+### Files created
+
+`app/Services/Contributions/ContributionService.php`,
+`app/Services/Withdrawals/WithdrawalService.php`, `app/Services/Expenses/ExpenseService.php`,
+`app/Services/Accounts/FinancialAccountService.php`,
+`app/Http/Controllers/Api/V1/{AuthController,ChamaController,MemberController,ContributionController,ContributionScheduleController,WithdrawalController,ExpenseController,FinancialAccountController,AccountingController,TransactionController}.php`,
+`app/Http/Resources/{UserResource,OrganizationResource,ChamaMembershipResource,ContributionScheduleResource,ContributionObligationResource,ContributionResource,WithdrawalRequestResource,ExpenseResource,FinancialAccountResource,LedgerAccountResource,JournalEntryResource,PaymentTransactionResource,AccountReconciliationResource}.php`,
+`tests/Feature/Api/V1/{AuthTest,ChamaTest,ContributionApiTest,WithdrawalApiTest,ExpenseAccountApiTest}.php`,
+`docs/API.md`.
+
+### Files modified
+
+`app/Http/Controllers/{ContributionController,WithdrawalController,ExpenseController,FinancialAccountController}.php`
+(reduced to thin adapters calling the new services), `routes/api.php` (the full `/api/v1`
+surface, public auth routes + `auth:sanctum`+`verified`+`tenant`-protected resource routes).
+
+### Tests executed
+
+`php artisan test` → **170 passed, 477 assertions** (up from 145 — 25 new API tests, zero
+regressions from the service extractions). `vendor/bin/pint --test` → clean. The full
+golden-path round trip was driven through **real HTTP requests** against `php artisan serve`
+(the API equivalent of this project's real-browser standard for web UI, since there's no browser
+involved here): login as the seeded `ken` user, call `/auth/me`, list chamas and see
+`my_roles: ["chairperson"]`, fetch the contributions page's data (obligations, outstanding
+balance, pending verifications), and fetch the accounting/chart-of-accounts endpoint and confirm
+`is_balanced: true` against the real seeded ledger — plus confirming a request with no token gets
+401 and a request for a nonexistent/foreign organization gets 404.
+
+**Two real things were caught during this work, not left as known issues:**
+
+1. **A latent audit-log gap, caught by reasoning rather than by a failing test.** Every
+   extracted service originally relied on `AuditLogger::log()`'s `$userId ?? auth()->id()`
+   fallback, exactly as the original controllers had. `auth()->id()` resolves against the
+   **default** guard, which `config/auth.php` defines as `web` (session-based) — for a stateless
+   API request authenticated via the separate `sanctum` guard, that call returns `null`. Confirmed
+   directly (`config('auth.guards')` only defines `web`) before it ever shipped: every audit log
+   entry written by an API-originated financial action would have silently recorded
+   `user_id: null`, a real accountability gap for exactly the actions (verifying a payment,
+   approving a withdrawal) where "who did this" matters most. Fixed by having every service method
+   pass `userId: $actor->id` explicitly rather than depend on the ambient guard.
+2. **A Laravel/Sanctum testing-harness gotcha, not a production bug** — documented in detail in
+   `tests/Feature/Api/V1/AuthTest.php` and worth recording here too so it isn't rediscovered the
+   hard way: `Illuminate\Auth\RequestGuard` (which Sanctum's token guard is built on) caches the
+   resolved user on itself for the guard instance's lifetime, and Laravel's `AuthManager` caches
+   guard instances per name. Two real production HTTP requests always get a fresh container and
+   therefore a fresh guard, so this never affects real traffic — but two `$this->postJson()` calls
+   inside *one* PHPUnit test method share the same container, so a naive "logout, then immediately
+   try to use the same token again" test would pass for the wrong reason (reading the first
+   request's cached guard, never re-checking the database). Verified by direct inspection (dumping
+   token counts and guard state between calls) before concluding this and fixing it with
+   `$this->app['auth']->forgetGuards()` between the two calls, rather than just declaring the
+   revocation test green once it happened to pass.
+
+### Known issues
+
+- **The Flutter Android app itself does not exist yet** — this phase is the REST API it will
+  consume, built and verified as thoroughly as this environment allows (real HTTP round-trips,
+  no mocking of the app's own stack), but there is no Dart code, no Flutter project, and nothing
+  to run on a device because this container cannot provide a device or emulator to verify against.
+  Starting it needs a session with real Flutter tooling and ideally a device/emulator so the
+  finished app can be visually verified the way every other phase's UI has been.
+- No per-token ability scoping (Sanctum supports it; nothing yet needs narrower-than-full tokens).
+- No token/device list-and-revoke UI on the web profile page — a user can't yet see or revoke
+  their own active API tokens from the website, only via direct database access or by the token
+  simply expiring/being replaced. Worth adding alongside or before the mobile app ships.
+- Registration and chama-creation still require real email verification before most endpoints
+  work, same as web — there's no "skip verification for mobile" shortcut, by design.
+- No API rate limiting beyond the 5-per-minute login/register throttle; the resource endpoints
+  rely on the same infrastructure-level protections as the web app.
+
+### Security notes
+
+Every protected endpoint re-verifies active membership and, where relevant, `manage-finances` via
+the same `ChecksChamaPermissions`-backed policies as the web app — there is no separate,
+potentially-drifting API authorization model. Tokens are bearer credentials with no built-in
+expiry configured (Sanctum's default); logout revokes the specific token used, not every token a
+user holds, matching normal "log out this device" mobile UX. The self-approval block on
+withdrawals, the auto-verification-only-via-Daraja-callback rule, and every other Phase 3/4
+invariant apply identically through the API, confirmed by a cross-tenant-denial test on every new
+resource.
+
+### Next step
+
+Build the Flutter Android app against this API in a session with actual Flutter/Dart tooling and,
+ideally, a device or emulator — read `docs/API.md` first. Independently of mobile: Phase 6's
+advanced modules (merry-go-round, loans, meetings, investments) or financial reporting depth
+remain open, and verifying migrations against real MySQL 8 is still the standing recommendation
+from every phase so far.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

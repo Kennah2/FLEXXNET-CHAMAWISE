@@ -4,12 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreFinancialAccountRequest;
 use App\Http\Requests\StoreReconciliationRequest;
-use App\Models\AccountReconciliation;
 use App\Models\FinancialAccount;
 use App\Models\LedgerPosting;
 use App\Models\Organization;
-use App\Services\AuditLogger;
-use App\Services\Ledger\LedgerProvisioner;
+use App\Services\Accounts\FinancialAccountService;
 use App\Support\Money;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -32,38 +30,16 @@ class FinancialAccountController extends Controller
         return view('organizations.accounts.create', compact('organization'));
     }
 
-    public function store(
-        StoreFinancialAccountRequest $request,
-        Organization $organization,
-        LedgerProvisioner $provisioner,
-        AuditLogger $auditLogger,
-    ): RedirectResponse {
-        $provisioner->provisionSystemAccounts($organization);
-
-        $isFirstAccount = ! $organization->financialAccounts()->exists();
-
-        $account = FinancialAccount::create([
-            'organization_id' => $organization->id,
-            'name' => $request->validated('name'),
-            'type' => $request->validated('type'),
-            'account_number' => $request->validated('account_number'),
-            'currency' => $organization->currency,
-            'opening_balance_cents' => Money::parseToCents($request->validated('opening_balance') ?? '0'),
-            'is_default' => $isFirstAccount || $request->boolean('is_default'),
-            'created_by' => $request->user()->id,
-        ]);
-
-        if ($account->is_default) {
-            $organization->financialAccounts()->where('id', '!=', $account->id)->update(['is_default' => false]);
-        }
-
-        $provisioner->provisionForFinancialAccount($account);
-
-        $auditLogger->log(
-            'financial_account.created',
-            $account,
-            organizationId: $organization->id,
-            after: $account->only(['name', 'type', 'opening_balance_cents']),
+    public function store(StoreFinancialAccountRequest $request, Organization $organization, FinancialAccountService $service): RedirectResponse
+    {
+        $account = $service->create(
+            $organization,
+            $request->validated('name'),
+            $request->validated('type'),
+            $request->validated('account_number'),
+            Money::parseToCents($request->validated('opening_balance') ?? '0'),
+            $request->boolean('is_default'),
+            $request->user(),
         );
 
         return redirect()->route('organizations.accounts.show', [$organization, $account])
@@ -86,29 +62,15 @@ class FinancialAccountController extends Controller
         return view('organizations.accounts.show', compact('organization', 'account', 'postings', 'reconciliations'));
     }
 
-    public function reconcile(StoreReconciliationRequest $request, Organization $organization, FinancialAccount $account, AuditLogger $auditLogger): RedirectResponse
+    public function reconcile(StoreReconciliationRequest $request, Organization $organization, FinancialAccount $account, FinancialAccountService $service): RedirectResponse
     {
-        abort_unless($account->organization_id === $organization->id, 404);
-
-        $statementBalanceCents = Money::parseToCents($request->validated('statement_balance'));
-        $computedBalanceCents = $account->balanceCents();
-
-        $reconciliation = AccountReconciliation::create([
-            'organization_id' => $organization->id,
-            'financial_account_id' => $account->id,
-            'statement_date' => $request->validated('statement_date'),
-            'statement_balance_cents' => $statementBalanceCents,
-            'computed_balance_cents' => $computedBalanceCents,
-            'variance_cents' => $statementBalanceCents - $computedBalanceCents,
-            'notes' => $request->validated('notes'),
-            'recorded_by' => $request->user()->id,
-        ]);
-
-        $auditLogger->log(
-            'account_reconciliation.recorded',
-            $reconciliation,
-            organizationId: $organization->id,
-            after: $reconciliation->only(['statement_balance_cents', 'computed_balance_cents', 'variance_cents']),
+        $reconciliation = $service->reconcile(
+            $organization,
+            $account,
+            $request->validated('statement_date'),
+            Money::parseToCents($request->validated('statement_balance')),
+            $request->validated('notes'),
+            $request->user(),
         );
 
         $status = $reconciliation->isBalanced()

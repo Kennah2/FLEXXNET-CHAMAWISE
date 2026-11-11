@@ -6,14 +6,10 @@ use App\Http\Requests\StoreContributionRequest;
 use App\Models\Contribution;
 use App\Models\ContributionObligation;
 use App\Models\ContributionSchedule;
-use App\Models\FinancialAccount;
 use App\Models\Organization;
 use App\Models\User;
-use App\Services\AuditLogger;
-use App\Services\Contributions\ContributionAllocator;
+use App\Services\Contributions\ContributionService;
 use App\Services\Contributions\ObligationGenerator;
-use App\Services\Ledger\LedgerPoster;
-use App\Services\Ledger\LedgerProvisioner;
 use App\Support\ChamaPermissions;
 use App\Support\Money;
 use Carbon\CarbonImmutable;
@@ -108,141 +104,56 @@ class ContributionController extends Controller
         ));
     }
 
-    public function store(StoreContributionRequest $request, Organization $organization, AuditLogger $auditLogger): RedirectResponse
+    public function store(StoreContributionRequest $request, Organization $organization, ContributionService $service): RedirectResponse
     {
         $forUserId = (int) ($request->validated('user_id') ?: $request->user()->id);
+        $scheduleId = $request->validated('contribution_schedule_id');
 
-        $contribution = Contribution::create([
-            'organization_id' => $organization->id,
-            'user_id' => $forUserId,
-            'contribution_schedule_id' => $request->validated('contribution_schedule_id'),
-            'amount_cents' => Money::parseToCents($request->validated('amount')),
-            'currency' => $organization->currency,
-            'payment_method' => $request->validated('payment_method'),
-            'transaction_reference' => $request->validated('transaction_reference'),
-            'paid_at' => $request->validated('paid_at'),
-            'recorded_by' => $request->user()->id,
-            'status' => Contribution::STATUS_PENDING_VERIFICATION,
-            'notes' => $request->validated('notes'),
-        ]);
-
-        $auditLogger->log(
-            'contribution.recorded',
-            $contribution,
-            organizationId: $organization->id,
-            after: $contribution->only(['user_id', 'amount_cents', 'payment_method']),
+        $service->record(
+            $organization,
+            $forUserId,
+            $scheduleId !== null ? (int) $scheduleId : null,
+            Money::parseToCents($request->validated('amount')),
+            $request->validated('payment_method'),
+            $request->validated('transaction_reference'),
+            $request->validated('paid_at'),
+            $request->validated('notes'),
+            $request->user(),
         );
 
         return back()->with('status', 'Contribution recorded and awaiting verification.');
     }
 
-    public function verify(
-        Request $request,
-        Organization $organization,
-        Contribution $contribution,
-        ContributionAllocator $allocator,
-        ObligationGenerator $generator,
-        LedgerPoster $poster,
-        LedgerProvisioner $ledgerProvisioner,
-        AuditLogger $auditLogger,
-    ): RedirectResponse {
+    public function verify(Request $request, Organization $organization, Contribution $contribution, ContributionService $service): RedirectResponse
+    {
         abort_unless($contribution->organization_id === $organization->id, 404);
         $this->authorize('verify', $contribution);
-
-        abort_unless($contribution->status === Contribution::STATUS_PENDING_VERIFICATION, 422, 'Only a pending contribution can be verified.');
-
-        $ledgerProvisioner->provisionSystemAccounts($organization);
 
         $validated = $request->validate([
             'financial_account_id' => ['required', 'integer'],
         ]);
-        $account = FinancialAccount::where('organization_id', $organization->id)->findOrFail($validated['financial_account_id']);
-        $ledgerProvisioner->provisionForFinancialAccount($account);
 
-        // Obligations are otherwise only generated lazily when someone views the contributions
-        // page (index()) — verifying a payment must not depend on that having happened recently,
-        // so make sure the schedule's obligations are current before allocating against them.
-        if ($contribution->contribution_schedule_id) {
-            $generator->generate($contribution->schedule, CarbonImmutable::now());
-        }
-
-        if ($contribution->transaction_reference) {
-            $duplicate = Contribution::query()
-                ->where('organization_id', $organization->id)
-                ->where('transaction_reference', $contribution->transaction_reference)
-                ->where('status', Contribution::STATUS_VERIFIED)
-                ->where('id', '!=', $contribution->id)
-                ->exists();
-
-            abort_if($duplicate, 422, 'This transaction reference has already been verified on another contribution.');
-        }
-
-        $savingsAccount = $organization->memberSavingsAccount();
-
-        $entry = $poster->post(
-            $organization,
-            "Contribution verified: {$contribution->user->name}",
-            [
-                ['ledger_account_id' => $account->ledgerAccount->id, 'debit_cents' => $contribution->amount_cents],
-                ['ledger_account_id' => $savingsAccount->id, 'credit_cents' => $contribution->amount_cents, 'user_id' => $contribution->user_id],
-            ],
-            $request->user(),
-            source: $contribution,
-        );
-
-        $contribution->status = Contribution::STATUS_VERIFIED;
-        $contribution->verified_by = $request->user()->id;
-        $contribution->verified_at = now();
-        $contribution->financial_account_id = $account->id;
-        $contribution->journal_entry_id = $entry->id;
-        $contribution->save();
-
-        $allocator->allocate($contribution);
-
-        $auditLogger->log('contribution.verified', $contribution, organizationId: $organization->id);
+        $service->verify($organization, $contribution, (int) $validated['financial_account_id'], $request->user());
 
         return back()->with('status', 'Contribution verified, posted to the ledger, and allocated.');
     }
 
-    public function reject(Organization $organization, Contribution $contribution, AuditLogger $auditLogger): RedirectResponse
+    public function reject(Organization $organization, Contribution $contribution, ContributionService $service): RedirectResponse
     {
         abort_unless($contribution->organization_id === $organization->id, 404);
         $this->authorize('reject', $contribution);
 
-        abort_unless($contribution->status === Contribution::STATUS_PENDING_VERIFICATION, 422, 'Only a pending contribution can be rejected.');
-
-        $contribution->status = Contribution::STATUS_REJECTED;
-        $contribution->verified_by = request()->user()->id;
-        $contribution->verified_at = now();
-        $contribution->save();
-
-        $auditLogger->log('contribution.rejected', $contribution, organizationId: $organization->id);
+        $service->reject($organization, $contribution, request()->user());
 
         return back()->with('status', 'Contribution rejected.');
     }
 
-    public function reverse(
-        Organization $organization,
-        Contribution $contribution,
-        ContributionAllocator $allocator,
-        LedgerPoster $poster,
-        AuditLogger $auditLogger,
-    ): RedirectResponse {
+    public function reverse(Organization $organization, Contribution $contribution, ContributionService $service): RedirectResponse
+    {
         abort_unless($contribution->organization_id === $organization->id, 404);
         $this->authorize('reverse', $contribution);
 
-        abort_unless($contribution->status === Contribution::STATUS_VERIFIED, 422, 'Only a verified contribution can be reversed.');
-
-        $allocator->reverse($contribution);
-
-        if ($contribution->journal_entry_id) {
-            $poster->reverse($contribution->journalEntry, request()->user(), "Reversal of contribution: {$contribution->user->name}");
-        }
-
-        $contribution->status = Contribution::STATUS_REVERSED;
-        $contribution->save();
-
-        $auditLogger->log('contribution.reversed', $contribution, organizationId: $organization->id);
+        $service->reverse($organization, $contribution, request()->user());
 
         return back()->with('status', 'Contribution reversed.');
     }
