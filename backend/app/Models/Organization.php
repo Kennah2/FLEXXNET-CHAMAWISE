@@ -185,6 +185,14 @@ class Organization extends Model
     }
 
     /**
+     * @return HasMany<Loan, $this>
+     */
+    public function loans(): HasMany
+    {
+        return $this->hasMany(Loan::class);
+    }
+
+    /**
      * This chama's own Daraja (M-Pesa STK Push) credentials, if configured — see
      * PaymentGatewayCredential's docblock for why each chama holds its own rather than the
      * platform holding one shared set.
@@ -203,6 +211,15 @@ class Organization extends Model
     public function memberSavingsAccount(): ?LedgerAccount
     {
         return $this->ledgerAccounts()->where('code', LedgerAccount::CODE_MEMBER_SAVINGS)->first();
+    }
+
+    /**
+     * The chama's loans-receivable (asset) control account — the sum of every borrower's
+     * sub-ledger balance. Provisioned by LedgerProvisioner alongside the other system accounts.
+     */
+    public function loansReceivableAccount(): ?LedgerAccount
+    {
+        return $this->ledgerAccounts()->where('code', LedgerAccount::CODE_LOANS_RECEIVABLE)->first();
     }
 
     public function isActive(): bool

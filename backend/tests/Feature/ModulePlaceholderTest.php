@@ -27,11 +27,10 @@ class ModulePlaceholderTest extends TestCase
         ]);
         $organization = Organization::firstWhere('name', 'Module Test Chama');
 
-        $response = $this->actingAs($chairperson)->get(route('organizations.module.show', [$organization, 'loans']));
+        $response = $this->actingAs($chairperson)->get(route('organizations.module.show', [$organization, 'reports']));
 
         $response->assertOk();
-        $response->assertSee('Loans');
-        $response->assertSee('Phase 6');
+        $response->assertSee('Reports');
     }
 
     public function test_an_unknown_module_404s(): void

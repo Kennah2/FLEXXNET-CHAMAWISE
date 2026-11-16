@@ -8,8 +8,9 @@ use App\Models\Organization;
 
 /**
  * Sets up a chama's chart of accounts: the fixed system accounts every chama needs (member
- * savings liability, penalty income, general expense) when the chama is created, and a backing
- * asset ledger account whenever a new FinancialAccount is added.
+ * savings liability, penalty income, general expense, loans receivable, interest income) when
+ * the chama is created, and a backing asset ledger account whenever a new FinancialAccount is
+ * added.
  */
 class LedgerProvisioner
 {
@@ -30,6 +31,16 @@ class LedgerProvisioner
                 'code' => LedgerAccount::CODE_GENERAL_EXPENSE,
                 'name' => 'General Expenses',
                 'type' => LedgerAccount::TYPE_EXPENSE,
+            ],
+            [
+                'code' => LedgerAccount::CODE_LOANS_RECEIVABLE,
+                'name' => 'Loans Receivable',
+                'type' => LedgerAccount::TYPE_ASSET,
+            ],
+            [
+                'code' => LedgerAccount::CODE_INTEREST_INCOME,
+                'name' => 'Loan Interest Income',
+                'type' => LedgerAccount::TYPE_INCOME,
             ],
         ];
 

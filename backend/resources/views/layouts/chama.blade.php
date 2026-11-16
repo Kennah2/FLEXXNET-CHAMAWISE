@@ -37,7 +37,7 @@
                             ['key' => 'members', 'label' => 'Members', 'icon' => 'users', 'route' => route('organizations.members.index', $organization)],
                             ['key' => 'contributions', 'label' => 'Contributions', 'icon' => 'currency', 'route' => route('organizations.contributions.index', $organization)],
                             ['key' => 'withdrawals', 'label' => 'Withdrawals', 'icon' => 'arrow-right', 'route' => route('organizations.withdrawals.index', $organization)],
-                            ['key' => 'loans', 'label' => 'Loans', 'icon' => 'calculator', 'route' => route('organizations.module.show', [$organization, 'loans'])],
+                            ['key' => 'loans', 'label' => 'Loans', 'icon' => 'calculator', 'route' => route('organizations.loans.index', $organization)],
                             ['key' => 'accounts', 'label' => 'Accounts', 'icon' => 'card', 'route' => route('organizations.accounts.index', $organization)],
                             ['key' => 'transactions', 'label' => 'Transactions', 'icon' => 'list', 'route' => route('organizations.transactions.index', $organization)],
                             ['key' => 'reports', 'label' => 'Reports', 'icon' => 'chart', 'route' => route('organizations.module.show', [$organization, 'reports'])],

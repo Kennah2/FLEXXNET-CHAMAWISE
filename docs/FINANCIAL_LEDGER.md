@@ -215,6 +215,56 @@ twice for one payment. The HTTP controller (`DarajaCallbackController`) still ac
 recognized-but-already-processed callback with 200, since *not* acknowledging would just provoke
 more retries for no benefit.
 
+## Loans (Phase 6)
+
+Two new system accounts join the three from Phase 3: `loans_receivable` (asset — what members owe
+the chama) and `interest_income` (income — interest earned). Both are provisioned the same
+defensive, idempotent way as the originals.
+
+### Approval sets terms; disbursement is a separate, deliberate act
+
+A loan's requested amount/term (set by the applicant) and its approved amount/term/rate (set by
+whoever approves it) are different columns — the committee is not bound to lend exactly what was
+asked for. Approving does **not** move money or generate a repayment schedule; disbursing does
+both, mirroring how withdrawals separate approval from payment. **Both steps carry a hard-coded
+self-action block** — `LoanPolicy::approve()` and `::disburse()` reject the borrower acting on
+their own loan before checking any permission, the same pattern `WithdrawalRequestPolicy` uses for
+approval. Disbursement also re-validates the paying account's real balance right before posting
+(`LoanService::disburse()`), because approval and disbursement can be separated in time and the
+account's balance can move in between — the same "re-check at the moment money actually moves"
+rule `WithdrawalService::pay()` follows.
+
+### Flat-interest schedule, cent-exact, by design simpler than amortizing
+
+`LoanInstallmentScheduleGenerator` computes a flat (simple) interest schedule, not a
+reducing-balance amortization: total interest is `principal × rate_bps × term_months / 12`
+(months, not days, and rate is annual), split evenly across installments, each then split evenly
+into principal and interest. Every installment gets `intdiv(total, count)`; the **last**
+installment absorbs whatever's left after integer division, so the sum across all installments is
+always exactly the original amount — no cent can ever go missing or appear from rounding. This is
+a deliberate simplification over amortization (documented, not hidden) and is the thing
+`LoanInstallmentScheduleGeneratorTest`'s five cases exist to pin down, including totals that don't
+divide evenly by the term.
+
+### Repayment allocation: interest before principal, oldest installment first
+
+`LoanRepaymentAllocator::allocate()` walks unpaid installments oldest-first and, within each one,
+pays off its interest before its principal — the same FIFO convention `ContributionAllocator` uses
+for obligations, just with an interest/principal split added on top. A repayment larger than the
+outstanding balance is rejected before anything is allocated or posted
+(`LoanService::recordRepayment()`); reversing a repayment (`::reverse()`) walks the allocation
+rows back off the installments in the same order they were applied, then posts a mirror ledger
+entry exactly like every other reversal in this codebase. A loan whose installments are all fully
+paid flips to `completed` automatically; reversing the repayment that completed it flips the loan
+back to `disbursed`.
+
+### Built as a service from the start, not retrofitted
+
+Unlike Phase 3/4 (whose web controllers had the ledger-posting logic extracted into services only
+once the Phase 5 API needed it too — see that phase's entry below), `LoanService` was written as
+the single place both the web controller and the API controller call into, from the first commit.
+No controller in either stack posts to the ledger or touches a `Loan` row directly.
+
 ## A timezone pitfall worth remembering
 
 `due_at` and `grace_expires_at` on an obligation are timestamps computed in the schedule's own

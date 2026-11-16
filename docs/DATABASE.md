@@ -1,4 +1,4 @@
-# CHAMA WISE — Database Design (through Phase 4)
+# CHAMA WISE — Database Design (through Phase 6: Loans)
 
 Full target schema is the domain inventory in Part 29 of the product brief, built out
 incrementally per phase. This document covers what Phase 1 actually creates; later phases append
@@ -208,6 +208,51 @@ callback JSON, kept for audit/support purposes). Unique on `(organization_id,
 checkout_request_id)` — scoped per organization because this app only ever looks one up within
 the organization that initiated it, never globally.
 
+## Phase 6 tables (loans)
+
+See `docs/FINANCIAL_LEDGER.md`'s "Loans (Phase 6)" section for the design rationale (flat-interest
+schedule, FIFO interest-before-principal allocation, the approve/disburse split). All monetary and
+rate columns are integer minor units, consistent with every phase since Phase 2.
+
+### `loans`
+One member's loan, from application through to closure: `organization_id`, `user_id` (the
+borrower), `requested_by` (usually the same as `user_id`, but an official can apply on a member's
+behalf, same pattern as `withdrawal_requests.requested_by`), `requested_amount_cents`,
+`requested_term_months`, `reason` (nullable), `status`
+(`pending`/`approved`/`rejected`/`cancelled`/`disbursed`/`completed`), `approved_amount_cents`,
+`term_months`, `interest_rate_bps` (basis points — integer, never a float percentage),
+`approved_by`/`approved_at` (nullable — set on approval, which may differ from what was
+requested), `financial_account_id` (disbursement source, nullable until disbursed),
+`disbursed_by`/`disbursed_at` (nullable), `journal_entry_id` (nullable — the disbursement
+entry).
+
+### `loan_installments`
+One scheduled repayment for a disbursed loan, generated in full at disbursement time by
+`LoanInstallmentScheduleGenerator`: `loan_id`, `installment_number` (1-based), `due_date`,
+`principal_due_cents`, `interest_due_cents`, `principal_paid_cents`, `interest_paid_cents`
+(both start at 0, incremented by `LoanRepaymentAllocator`), `status` (`pending`/`paid`). The last
+installment's `principal_due_cents`/`interest_due_cents` absorbs whatever remainder integer
+division on the earlier installments left behind, so the column sums always equal the loan's
+approved amount and total interest exactly.
+
+### `loan_repayments`
+One payment against a disbursed loan: `loan_id`, `organization_id` (denormalized for tenant-scoped
+queries, same reasoning as `ledger_postings.organization_id`), `amount_cents`,
+`principal_cents`/`interest_cents` (the split `LoanRepaymentAllocator` computed, filled in after
+allocation), `paid_at`, `financial_account_id` (where the money was received into),
+`recorded_by`, `status` (`posted`/`reversed`), `journal_entry_id`.
+
+### `loan_repayment_allocations`
+One repayment's effect on one installment — the join `LoanRepaymentAllocator` writes and later
+reads back to reverse a repayment in the same order it was applied: `loan_repayment_id`,
+`loan_installment_id`, `principal_cents`, `interest_cents`.
+
+### System ledger accounts, extended
+Two more system accounts join the three from Phase 3, provisioned the same idempotent way:
+`loans_receivable` (asset — what members owe the chama in aggregate across all loans, split by
+`ledger_postings.user_id` the same way `member_savings` is), `interest_income` (income — interest
+earned on disbursed loans).
+
 ## Entity relationships
 
 ```
@@ -232,6 +277,12 @@ organizations 1───* account_reconciliations *───1 financial_accounts
 organizations 1───1 payment_gateway_credentials 1───1 financial_accounts
 organizations 1───* payment_transactions *───1 users
 payment_transactions 0───1 contributions (set once a successful callback creates one)
+
+organizations 1───* loans *───1 users (borrower)
+loans 1───* loan_installments
+loans 1───* loan_repayments *───1 financial_accounts
+loan_repayments 1───* loan_repayment_allocations *───1 loan_installments
+loans, loan_repayments }───1 journal_entries (direct FK, set on disbursement / on repayment)
 ```
 
 Full ERD is expanded in `docs/ERD.md` once there's enough schema across phases to make a diagram

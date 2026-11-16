@@ -876,6 +876,117 @@ so far.
 
 ---
 
+## Phase 6 — Loans
+
+**Status:** Built, tested, and browser-verified end-to-end (apply → approve → disburse → repay →
+reverse, plus cancel) against the live web app. First of Phase 6's four advanced modules
+(merry-go-round, loans, meetings, investments); the other three remain open — see Next step.
+
+### Completed
+
+- Loan domain: `loans`, `loan_installments`, `loan_repayments`, `loan_repayment_allocations`
+  tables; `Loan`/`LoanInstallment`/`LoanRepayment`/`LoanRepaymentAllocation` models. Two new
+  system ledger accounts (`loans_receivable`, `interest_income`) alongside Phase 3's three.
+- `LoanInstallmentScheduleGenerator`: flat (simple) interest, cent-exact — every installment gets
+  `intdiv(total, count)`, the last absorbs the remainder, so the schedule's totals always equal
+  the loan's approved amount and total interest exactly. 5 targeted edge-case tests (uneven
+  division, single installment, zero interest, multi-year terms).
+- `LoanRepaymentAllocator`: FIFO across unpaid installments, interest before principal within
+  each one — same convention `ContributionAllocator` uses for obligations. `reverse()` walks the
+  allocation rows back off in the same order they were applied.
+- `LoanService`, built as a service from the start (not retrofitted the way Phase 3/4's web
+  controllers had to be, once the Phase 5 API needed the same logic) — `apply`/`approve`/
+  `reject`/`cancel`/`disburse`/`recordRepayment`/`reverseRepayment`, every write path shared by
+  both the web and API controllers.
+- `LoanPolicy` with hard self-action blocks on both `approve` and `disburse` — a borrower can
+  never approve or disburse their own loan, checked before any permission, mirroring
+  `WithdrawalRequestPolicy`.
+- Web: `organizations.loans.*` routes, an apply/pending-applications/ready-to-disburse/your-loans
+  index page, and a detail page with the installment schedule, repayment form, and repayment
+  history with reversal. The sidebar's "Loans" placeholder and the dashboard's "Coming in Phase 6"
+  stat cards now point at the real thing.
+- API: `Api\V1\LoanController` + `LoanResource`/`LoanInstallmentResource`/`LoanRepaymentResource`
+  under `/api/v1/chamas/{organization}/loans`, same auth/tenant/policy stack as every other v1
+  resource.
+- Tests: 5 schedule-generator + 12 web controller + 4 API tests, all passing alongside the full
+  pre-existing suite — **193 tests passed (577 assertions), zero regressions**. `vendor/bin/pint`
+  clean.
+- **Real browser verification** (Playwright against the live Laravel dev server, not just HTTP
+  assertions): Frank applied for a loan, Ken (chairperson) approved it with different terms than
+  requested, disbursed it from the chama's till, recorded a partial repayment, and reversed it —
+  every step screenshotted and the UI, balances, and installment-schedule table confirmed correct
+  at each one. Also exercised the borrower's own cancel action on a separate pending application.
+
+### Files created/modified
+
+`database/migrations/*_create_loans_table.php` and three more (installments, repayments,
+allocations — timestamps manually sequenced for correct FK creation order after `artisan
+make:migration` gave three identical ones), `app/Models/Loan.php`, `LoanInstallment.php`,
+`LoanRepayment.php`, `LoanRepaymentAllocation.php`, `app/Services/Loans/
+LoanInstallmentScheduleGenerator.php`, `LoanRepaymentAllocator.php`, `LoanService.php`,
+`app/Policies/LoanPolicy.php`, `app/Http/Requests/StoreLoanRequest.php`,
+`ApproveLoanRequest.php`, `DisburseLoanRequest.php`, `StoreLoanRepaymentRequest.php`,
+`app/Http/Controllers/LoanController.php`, `app/Http/Controllers/Api/V1/LoanController.php`,
+`app/Http/Resources/LoanResource.php`, `LoanInstallmentResource.php`, `LoanRepaymentResource.php`,
+`resources/views/organizations/loans/index.blade.php`, `show.blade.php`, `routes/web.php`,
+`routes/api.php`, `app/Models/LedgerAccount.php`, `app/Services/Ledger/LedgerProvisioner.php`,
+`app/Models/Organization.php` (loan relations), `app/Http/Controllers/OrganizationController.php`
+and `resources/views/organizations/show.blade.php` (real stat cards), `app/Http/Controllers/
+ModulePlaceholderController.php` (removed 'loans'), `resources/views/components/
+status-badge.blade.php` (added `completed`/`approved`), `tests/Feature/Loans/
+LoanInstallmentScheduleGeneratorTest.php`, `LoanControllerTest.php`, `tests/Feature/Api/V1/
+LoanApiTest.php`, `tests/Feature/ModulePlaceholderTest.php` (updated), `docs/FINANCIAL_LEDGER.md`,
+`docs/DATABASE.md` (this entry's companion sections).
+
+### Two real bugs caught by this session's own testing, not left to be discovered later
+
+1. **Missing balance check at disbursement.** `LoanService::disburse()` had no validation that
+   the paying account actually has enough real balance to cover the disbursement — an approved
+   loan could be "disbursed" against an account that couldn't actually afford it, silently
+   creating a negative balance. Caught while writing `LoanApiTest`'s disbursement assertions
+   (disbursing more than the seeded account held should have failed and didn't), fixed by adding
+   the same `abort_if` re-check pattern `WithdrawalService::pay()` already uses.
+2. **A real, previously-untested crash in the Phase 5 API**, found as a side effect of exercising
+   the same tenant/permission code paths for loans: `ContributionController`'s index endpoint
+   called `->loadMissing('user')` on `$pendingVerifications` even when that variable was a plain
+   (non-Eloquent) `collect()` for a non-official caller, throwing `BadMethodCallException` on any
+   ordinary member's first call to that endpoint. Fixed by removing the redundant call; this had
+   shipped in the Phase 5 entry below without a test covering a non-official hitting that
+   endpoint.
+
+### Known issues
+
+- Flat (simple) interest only — no reducing-balance amortization option. Documented as a
+  deliberate simplification in `docs/FINANCIAL_LEDGER.md`, not an oversight.
+- No partial/early-settlement discount, no penalty/late-fee logic on overdue installments (an
+  installment's `status` can go stale relative to `due_date` with nothing surfacing that yet).
+- No loan-limit policy (e.g. capping requested amount against savings balance or a chama setting)
+  — any member can apply for any amount; only approval and the disbursement balance check gate
+  what actually moves.
+- No mobile (Flutter) screen for loans yet — Phase 5's app covers contributions and withdrawals
+  only; loans would be a natural next screen to add there.
+- Same standing gaps as every prior phase: no verification against real MySQL 8 (this environment
+  only has sqlite), no real settings UI for interest-rate defaults or loan limits.
+
+### Security notes
+
+Same model as every financial module so far: every loan endpoint (web and API) re-checks tenant
+membership and `manage-finances` via `LoanPolicy`, backed by the same `ChecksChamaPermissions`
+infrastructure as withdrawals and expenses — no separate authorization path. The self-approval and
+self-disbursement blocks are unconditional policy checks, not settings, and are each covered by a
+dedicated test (web and API) that has an official attempt to act on their own loan and asserts a
+403. Cross-tenant denial (a member of chama B cannot see or act on chama A's loans) is covered the
+same way every other resource has been since Phase 5.
+
+### Next step
+
+Continue Phase 6 with the next advanced module — merry-go-round (rotating payouts), meetings, or
+investments — one at a time, reporting back before moving to the next, as agreed with the user.
+Phase 7 (SaaS administration/billing) remains entirely unstarted. Independently: real MySQL 8
+verification and a mobile loans screen remain open from prior phases.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.

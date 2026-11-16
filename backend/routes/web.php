@@ -9,6 +9,7 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\FinancialAccountController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\JournalEntryController;
+use App\Http\Controllers\LoanController;
 use App\Http\Controllers\ModulePlaceholderController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\PaymentGatewayCredentialController;
@@ -87,8 +88,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/{expense}/reverse', [ExpenseController::class, 'reverse'])->name('reverse');
         });
 
+        Route::prefix('loans')->name('organizations.loans.')->group(function () {
+            Route::get('/', [LoanController::class, 'index'])->name('index');
+            Route::post('/', [LoanController::class, 'store'])->name('store');
+            Route::get('/{loan}', [LoanController::class, 'show'])->name('show');
+            Route::post('/{loan}/approve', [LoanController::class, 'approve'])->name('approve');
+            Route::post('/{loan}/reject', [LoanController::class, 'reject'])->name('reject');
+            Route::post('/{loan}/cancel', [LoanController::class, 'cancel'])->name('cancel');
+            Route::post('/{loan}/disburse', [LoanController::class, 'disburse'])->name('disburse');
+            Route::post('/{loan}/repayments', [LoanController::class, 'storeRepayment'])->name('repayments.store');
+            Route::post('/{loan}/repayments/{repayment}/reverse', [LoanController::class, 'reverseRepayment'])->name('repayments.reverse');
+        });
+
         Route::get('/{module}', [ModulePlaceholderController::class, 'show'])
-            ->whereIn('module', ['loans', 'reports', 'settings'])
+            ->whereIn('module', ['reports', 'settings'])
             ->name('organizations.module.show');
     });
 

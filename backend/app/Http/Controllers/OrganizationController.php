@@ -6,6 +6,7 @@ use App\Http\Requests\StoreOrganizationRequest;
 use App\Models\ChamaMembership;
 use App\Models\Contribution;
 use App\Models\Invitation;
+use App\Models\Loan;
 use App\Models\Organization;
 use App\Models\User;
 use App\Models\WithdrawalRequest;
@@ -101,6 +102,11 @@ class OrganizationController extends Controller
                 ->count()
             : 0;
 
+        $activeLoansCount = $organization->loans()->where('status', Loan::STATUS_DISBURSED)->count();
+        $pendingLoanApplicationsCount = $canManageFinances
+            ? $organization->loans()->where('status', Loan::STATUS_PENDING)->count()
+            : 0;
+
         return view('organizations.show', compact(
             'organization',
             'pendingInvitationsCount',
@@ -112,6 +118,8 @@ class OrganizationController extends Controller
             'totalCashCents',
             'memberSavingsCents',
             'pendingWithdrawalApprovalsCount',
+            'activeLoansCount',
+            'pendingLoanApplicationsCount',
         ));
     }
 }

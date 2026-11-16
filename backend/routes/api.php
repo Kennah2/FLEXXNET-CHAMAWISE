@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\ContributionController;
 use App\Http\Controllers\Api\V1\ContributionScheduleController;
 use App\Http\Controllers\Api\V1\ExpenseController;
 use App\Http\Controllers\Api\V1\FinancialAccountController;
+use App\Http\Controllers\Api\V1\LoanController;
 use App\Http\Controllers\Api\V1\MemberController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\WithdrawalController;
@@ -83,6 +84,17 @@ Route::prefix('v1')->group(function () {
                 Route::get('/', [ExpenseController::class, 'index']);
                 Route::post('/', [ExpenseController::class, 'store']);
                 Route::post('/{expense}/reverse', [ExpenseController::class, 'reverse']);
+            });
+
+            Route::prefix('loans')->group(function () {
+                Route::get('/', [LoanController::class, 'index']);
+                Route::post('/', [LoanController::class, 'store']);
+                Route::get('/{loan}', [LoanController::class, 'show']);
+                Route::post('/{loan}/approve', [LoanController::class, 'approve']);
+                Route::post('/{loan}/reject', [LoanController::class, 'reject']);
+                Route::post('/{loan}/cancel', [LoanController::class, 'cancel']);
+                Route::post('/{loan}/disburse', [LoanController::class, 'disburse']);
+                Route::post('/{loan}/repayments', [LoanController::class, 'storeRepayment']);
             });
         });
     });

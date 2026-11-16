@@ -7,21 +7,16 @@ use Illuminate\View\View;
 
 /**
  * Renders an honest "not built yet" page for sidebar modules the specification describes but
- * this phase hasn't implemented (loans, reports, chama settings — contributions moved to
+ * this phase hasn't implemented (reports, chama settings — contributions moved to
  * ContributionController in Phase 2; accounts/transactions/accounting moved to their own
- * controllers in Phase 3). Per the project's strict development rules, a nav item must never be
- * a dead link or silently pretend a feature exists — this page says plainly what the module will
- * do and which phase builds it, instead of a 404 or a fabricated empty dashboard.
+ * controllers in Phase 3; loans moved to LoanController in Phase 6). Per the project's strict
+ * development rules, a nav item must never be a dead link or silently pretend a feature exists —
+ * this page says plainly what the module will do and which phase builds it, instead of a 404 or
+ * a fabricated empty dashboard.
  */
 class ModulePlaceholderController extends Controller
 {
     private const MODULES = [
-        'loans' => [
-            'title' => 'Loans',
-            'icon' => 'calculator',
-            'phase' => 'Phase 6 — Advanced Chama Modules',
-            'description' => 'Loan applications, approvals, interest and repayment schedules.',
-        ],
         'reports' => [
             'title' => 'Reports',
             'icon' => 'chart',

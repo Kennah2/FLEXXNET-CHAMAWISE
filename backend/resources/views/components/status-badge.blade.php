@@ -2,8 +2,8 @@
 
 @php
 $classes = match ($status) {
-    'paid', 'verified', 'active' => 'badge-success',
-    'pending', 'partial', 'pending_verification' => 'badge-pending',
+    'paid', 'verified', 'active', 'completed' => 'badge-success',
+    'pending', 'partial', 'pending_verification', 'approved' => 'badge-pending',
     'overdue', 'rejected' => 'badge-danger',
     default => 'badge-neutral',
 };

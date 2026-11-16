@@ -34,6 +34,10 @@ class LedgerAccount extends Model
 
     public const CODE_GENERAL_EXPENSE = 'general_expense';
 
+    public const CODE_LOANS_RECEIVABLE = 'loans_receivable';
+
+    public const CODE_INTEREST_INCOME = 'interest_income';
+
     protected $fillable = [
         'organization_id',
         'code',

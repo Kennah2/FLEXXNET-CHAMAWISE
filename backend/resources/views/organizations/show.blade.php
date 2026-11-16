@@ -40,14 +40,17 @@
                     </div>
                     <span class="text-lg font-heading font-bold text-navy-900">{{ $pendingInvitationsCount }}</span>
                 </a>
-                <a href="{{ route('organizations.module.show', [$organization, 'loans']) }}" class="card flex items-center justify-between opacity-60 hover:opacity-100 transition">
+                <a href="{{ route('organizations.loans.index', $organization) }}" class="card flex items-center justify-between hover:ring-brand-pink transition">
                     <div class="flex items-center gap-3">
                         <span class="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><x-icon name="calculator" class="h-5 w-5" /></span>
                         <div>
                             <p class="font-medium text-navy-900 text-sm">Loan Applications</p>
-                            <p class="text-xs text-navy-400">Coming in Phase 6</p>
+                            <p class="text-xs text-navy-400">{{ $canManageFinances ? 'Awaiting a decision' : 'Officials only' }}</p>
                         </div>
                     </div>
+                    @if ($canManageFinances)
+                        <span class="text-lg font-heading font-bold text-navy-900">{{ $pendingLoanApplicationsCount }}</span>
+                    @endif
                 </a>
                 <a href="{{ route('organizations.withdrawals.index', $organization) }}" class="card flex items-center justify-between hover:ring-brand-pink transition">
                     <div class="flex items-center gap-3">
@@ -74,12 +77,13 @@
                 <p class="text-2xl font-heading font-bold text-navy-900 mt-3">{{ $organization->members->count() }}</p>
                 <p class="text-xs text-brand-pink mt-1">View all &rarr;</p>
             </a>
-            <a href="{{ route('organizations.module.show', [$organization, 'loans']) }}" class="card opacity-70 hover:opacity-100 transition">
+            <a href="{{ route('organizations.loans.index', $organization) }}" class="card hover:ring-brand-pink transition">
                 <div class="flex items-center justify-between">
                     <p class="text-sm text-navy-400">Active Loans</p>
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600"><x-icon name="calculator" class="h-5 w-5" /></span>
                 </div>
-                <p class="text-sm font-medium text-navy-400 mt-3">Coming in Phase 6</p>
+                <p class="text-2xl font-heading font-bold text-navy-900 mt-3">{{ $activeLoansCount }}</p>
+                <p class="text-xs text-brand-pink mt-1">View all &rarr;</p>
             </a>
             <a href="{{ route('organizations.contributions.index', $organization) }}" class="card hover:ring-brand-pink transition">
                 <div class="flex items-center justify-between">
@@ -114,7 +118,7 @@
                 @php
                     $quickActions = [
                         ['label' => 'Record Contribution', 'icon' => 'currency', 'bg' => 'bg-emerald-50', 'fg' => 'text-brand-teal', 'route' => route('organizations.contributions.index', $organization)],
-                        ['label' => 'Apply for Loan', 'icon' => 'calculator', 'bg' => 'bg-purple-50', 'fg' => 'text-purple-600', 'route' => route('organizations.module.show', [$organization, 'loans'])],
+                        ['label' => 'Apply for Loan', 'icon' => 'calculator', 'bg' => 'bg-purple-50', 'fg' => 'text-purple-600', 'route' => route('organizations.loans.index', $organization)],
                         ['label' => 'Add Member', 'icon' => 'plus', 'bg' => 'bg-blue-50', 'fg' => 'text-blue-600', 'route' => route('organizations.members.index', $organization)],
                         ['label' => 'Record Expense', 'icon' => 'list', 'bg' => 'bg-indigo-50', 'fg' => 'text-indigo-600', 'route' => route('organizations.expenses.index', $organization)],
                         ['label' => 'Add Account', 'icon' => 'card', 'bg' => 'bg-amber-50', 'fg' => 'text-amber-600', 'route' => route('organizations.accounts.create', $organization)],
