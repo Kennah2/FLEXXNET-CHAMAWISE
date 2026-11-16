@@ -37,10 +37,18 @@ class ChamaController extends Controller
         return new OrganizationResource($this->withRoles($organization, $request->user()));
     }
 
+    /**
+     * Annotates with both role names (for display) and permission names (for the client to
+     * decide what to show without guessing from role names, which a chama can rename or
+     * reassign — see ChamaPermissions). my_permissions is the one the mobile app should
+     * actually branch on; my_roles is label text only.
+     */
     private function withRoles(Organization $organization, User $user): Organization
     {
         app(PermissionRegistrar::class)->setPermissionsTeamId($organization->id);
-        $organization->my_roles = User::find($user->id)->getRoleNames()->values()->all();
+        $freshUser = User::find($user->id);
+        $organization->my_roles = $freshUser->getRoleNames()->values()->all();
+        $organization->my_permissions = $freshUser->getAllPermissions()->pluck('name')->values()->all();
 
         return $organization;
     }

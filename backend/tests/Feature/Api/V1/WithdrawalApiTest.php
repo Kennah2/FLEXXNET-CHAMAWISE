@@ -89,6 +89,20 @@ class WithdrawalApiTest extends TestCase
         $this->assertSame(60_00, $account->fresh()->balanceCents());
     }
 
+    public function test_the_index_tells_the_client_whether_they_can_manage_finances(): void
+    {
+        [$ken, $organization] = $this->createChamaWithChairperson('Api Withdrawal Can Manage Chama');
+        $member = $this->addMemberWithRole($organization, 'member');
+
+        Sanctum::actingAs($ken);
+        $this->getJson("/api/v1/chamas/{$organization->id}/withdrawals")
+            ->assertJsonPath('data.can_manage_finances', true);
+
+        Sanctum::actingAs($member);
+        $this->getJson("/api/v1/chamas/{$organization->id}/withdrawals")
+            ->assertJsonPath('data.can_manage_finances', false);
+    }
+
     public function test_requesting_more_than_the_balance_is_rejected_via_the_api(): void
     {
         [$ken, $organization] = $this->createChamaWithChairperson('Api Over Withdrawal Chama');

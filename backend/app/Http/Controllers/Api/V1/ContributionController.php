@@ -74,11 +74,16 @@ class ContributionController extends Controller
 
         return response()->json([
             'data' => [
+                'can_manage_finances' => $canManageFinances,
                 'outstanding_cents' => $myOutstandingObligations->sum(fn (ContributionObligation $o) => $o->outstandingCents()),
                 'outstanding_formatted' => Money::format($myOutstandingObligations->sum(fn (ContributionObligation $o) => $o->outstandingCents()), $organization->currency),
                 'obligations' => ContributionObligationResource::collection($myObligations),
                 'payments' => ContributionResource::collection($myPayments),
-                'pending_verifications' => ContributionResource::collection($pendingVerifications->loadMissing('user')),
+                // Already eager-loaded with 'user' above when non-empty; no loadMissing() needed
+                // (and $pendingVerifications is a plain, non-Eloquent Collection when empty —
+                // collect() — so loadMissing() isn't even callable on it, a real bug this
+                // method's own test for the non-official path caught).
+                'pending_verifications' => ContributionResource::collection($pendingVerifications),
             ],
         ]);
     }

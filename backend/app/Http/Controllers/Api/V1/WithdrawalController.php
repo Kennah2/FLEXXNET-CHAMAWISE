@@ -53,6 +53,7 @@ class WithdrawalController extends Controller
 
         return response()->json([
             'data' => [
+                'can_manage_finances' => $canManageFinances,
                 'my_balance_cents' => $savingsAccount?->balanceCents($user->id) ?? 0,
                 'my_requests' => WithdrawalRequestResource::collection($myRequests),
                 'pending_approvals' => WithdrawalRequestResource::collection($pendingApprovals),

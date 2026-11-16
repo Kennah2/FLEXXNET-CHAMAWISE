@@ -47,6 +47,7 @@ class ChamaTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('data.id', $organization->id);
         $this->assertContains('chairperson', $response->json('data.my_roles'));
+        $this->assertContains('chama.manage-finances', $response->json('data.my_permissions'));
     }
 
     public function test_a_non_member_cannot_view_a_chama_via_the_api(): void
