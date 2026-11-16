@@ -55,6 +55,7 @@ class WithdrawalController extends Controller
             'data' => [
                 'can_manage_finances' => $canManageFinances,
                 'my_balance_cents' => $savingsAccount?->balanceCents($user->id) ?? 0,
+                'my_balance_formatted' => Money::format($savingsAccount?->balanceCents($user->id) ?? 0, $organization->currency),
                 'my_requests' => WithdrawalRequestResource::collection($myRequests),
                 'pending_approvals' => WithdrawalRequestResource::collection($pendingApprovals),
                 'ready_to_pay' => WithdrawalRequestResource::collection($readyToPay),

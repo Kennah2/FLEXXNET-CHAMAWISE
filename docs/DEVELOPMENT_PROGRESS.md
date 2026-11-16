@@ -793,6 +793,89 @@ from every phase so far.
 
 ---
 
+## Phase 5 (continued) — the Flutter app itself
+
+**Status:** Built and verified as thoroughly as this environment allows. See `docs/MOBILE.md` for
+the full architecture, setup, and known-issues list — this entry covers what happened and what
+was learned, not the reference docs.
+
+### Scope decision, made with the user first
+
+Installed Flutter (3.50 stable) and confirmed this container, while it has no Android SDK or
+emulator, does have Chrome and Flutter's web target — meaning a real, running build could
+actually be driven by a real browser and verified with Playwright, not just written and asserted
+correct. Scoped the app to two screens — contributions and withdrawals, the features a member
+reaches for most on a phone — rather than full parity with every web page, consistent with how
+every other phase has preferred a verified slice over a speculative full build.
+
+### Completed
+
+- Full app skeleton: `ApiClient` (bearer-token injection, typed `ApiException` on any non-2xx or
+  transport failure), per-resource repositories, `ChangeNotifier` providers per screen, and five
+  screens (login, register, chama list, a bottom-nav chama shell, contributions, withdrawals).
+- Contributions screen: outstanding balance, a "Pay with M-Pesa" panel wired to the same
+  initiate/poll endpoints the web Alpine component uses, a record-contribution form, an
+  officials-only pending-verifications queue (verify via an account picker, or reject), the
+  member's own obligations with penalty flags, and payment history.
+- Withdrawals screen: savings balance, a request form, officials-only pending-approvals and
+  ready-to-pay queues, and the member's own requests with cancel. Matches web's self-approval UX
+  exactly — an official's own request shows "Can't approve your own request" instead of live
+  buttons, on top of (not instead of) the backend's unconditional policy block.
+- `flutter analyze` clean; 17 tests (`ApiClient`, model parsing, `AuthProvider`, a full
+  `LoginScreen` widget test) running against mocked HTTP and a mocked secure-storage platform
+  channel — no real device/keystore needed for any of it.
+- **A real, driven, end-to-end verification** no prior phase's "no device" caveat allowed before:
+  built for web (`flutter build web --no-web-resources-cdn`), served locally, and driven by
+  Playwright against the actual running Laravel API and its seeded dev database — real login,
+  real chama/role data, real obligations and balances, and a deliberate attempt to self-approve a
+  withdrawal to confirm the backend's block holds through this client too. Screenshots sent to
+  the user.
+
+### Files created
+
+`mobile/` (the whole Flutter project — `lib/core`, `lib/repositories`, `lib/providers`,
+`lib/screens`, `lib/widgets`, `test/`), `backend/config/cors.php` (published so a browser-based
+client on a different origin can reach the API — see the Phase 5 REST API entry above for why it
+wasn't needed before this), `docs/MOBILE.md`.
+
+### Two real bugs caught by this session's own tooling, not left to be discovered later
+
+1. **A silent, version-specific framework change.** Flutter 3.50 scaffolds against
+   `package:material_ui/material_ui.dart`, not the historically bundled
+   `package:flutter/material.dart` — Material widgets were decoupled out of core Flutter.
+   Migrated with Flutter's own `dart fix --apply --code=migrate_design_widgets` rather than
+   guessing at a hand migration. The sharper edge: `material_ui`'s `MaterialApp` has no implicit
+   `MaterialLocalizations` fallback, so every text field threw "No MaterialLocalizations found"
+   until `GlobalMaterialLocalizations.delegates` was added explicitly — and that class exists
+   *twice*, once in `material_ui` and once in the separate `flutter_localizations` SDK package,
+   non-interchangeably (confirmed by a compile error when both were imported at once). Caught by
+   a widget test trying to type into a field, before any manual verification happened.
+2. **Two `async`-free closures containing `await`**, caught instantly by `flutter analyze` (a
+   static check, not a runtime test) in `ApiClient.get()`/`post()`.
+
+### Known issues
+
+See `docs/MOBILE.md`'s "Known issues" in full; the headline ones: **no Android verification at
+all** (no SDK/emulator in this container — this is the first thing to do in a session that has
+them, before trusting this app with a real chama), no accounts/accounting/expenses/member/
+settings screens (deliberate scope line, not an oversight), English-only, no CI.
+
+### Security notes
+
+Identical model to the REST API entry above — the mobile client adds no new authorization
+surface, only a new caller of the existing one. `flutter_secure_storage` holds the Sanctum token
+(Keystore-backed on a real Android device; this session only verified its web/IndexedDB and
+mocked-test-channel paths, not the real Android implementation).
+
+### Next step
+
+Verify on real Android tooling/a device before trusting this with a real chama (see Known
+issues). Independently: Phase 6's advanced modules or financial reporting depth remain open, and
+verifying migrations against real MySQL 8 is still the standing recommendation from every phase
+so far.
+
+---
+
 ## How to resume work in a new session
 
 1. Read this file top to bottom — it states the actual current phase and what remains.
